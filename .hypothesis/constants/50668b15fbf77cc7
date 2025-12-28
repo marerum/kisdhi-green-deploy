@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/utils/error_handlers.py
+# hypothesis_version: 6.148.7
+
+['AI operation', '__code__', 'api key', 'async', 'auth_error', 'authentication', 'connection', 'constraint_error', 'database operation', 'db', 'disconnection_error', 'general', 'general_error', 'network', 'network_error', 'operational_error', 'orig', 'quota', 'rate limit', 'rate_limit', 'rate_limit_error', 'sqlalchemy_error', 'timeout', 'timeout_error', 'unexpected_error']

@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/config.py
+# hypothesis_version: 6.148.7
+
+[3306, 8000, ',', '.env', '0.0.0.0', '?ssl_disabled=false', 'PYTEST_CURRENT_TEST', 'ai_business_flow', 'allowed_origins', 'database_host', 'database_name', 'database_port', 'debug', 'development', 'environment', 'host', 'localhost', 'mysql+pymysql://', 'mysql://', 'port', 'production', 'sk-', 'sk-proj-', 'sqlite://']

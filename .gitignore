@@ -1,0 +1,37 @@
+# Root level gitignore for AI Business Flow project
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# SSL Certificates (keep the directory structure but not the actual certificates)
+backend/certs/*.pem
+backend/certs/*.crt
+!backend/certs/.gitkeep
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+dist/
+build/
+
+# Dependencies (handled by individual project gitignores)
+node_modules/
+__pycache__/

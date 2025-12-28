@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/routers/projects.py
+# hypothesis_version: 6.148.7
+
+[255, '/', '/api/projects', '/{project_id}', 'Project', 'create project', 'delete project', 'department', 'draft', 'get project', 'list projects', 'name', 'project_id', 'projects', 'update project']

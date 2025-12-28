@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/exceptions.py
+# hypothesis_version: 6.148.7
+
+['AI_SERVICE_ERROR', 'BUSINESS_FLOW_ERROR', 'CONFIGURATION_ERROR', 'DATABASE_ERROR', 'RESOURCE_NOT_FOUND', 'VALIDATION_ERROR', 'ai_error_type', 'code', 'config_key', 'details', 'error', 'field', 'message', 'operation', 'resource_id', 'resource_type']

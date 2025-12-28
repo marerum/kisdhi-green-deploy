@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/routers/hearing.py
+# hypothesis_version: 6.148.7
+
+['/api', 'hearing', 'message']

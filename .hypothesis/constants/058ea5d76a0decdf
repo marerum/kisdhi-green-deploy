@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/main.py
+# hypothesis_version: 6.148.7
+
+[500, 503, '*', '/', '/health', '0.1.0', 'AI Business Flow API', 'X-Request-ID', '__main__', 'ai_service', 'app.main:app', 'code', 'database', 'details', 'environment', 'error', 'healthy', 'http', 'info', 'message', 'production', 'request_id', 'services', 'status', 'unhealthy', 'version']

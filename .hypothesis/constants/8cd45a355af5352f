@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/database.py
+# hypothesis_version: 6.148.7
+
+[1800, 'SELECT 1', 'autocommit', 'ca', 'charset', 'check_hostname', 'connect_args', 'connect_timeout', 'echo', 'max_overflow', 'pool_pre_ping', 'pool_recycle', 'pool_size', 'poolclass', 'read_timeout', 'sqlite:///:memory:', 'ssl', 'ssl_disabled', 'utf8mb4', 'verify_mode', 'write_timeout']

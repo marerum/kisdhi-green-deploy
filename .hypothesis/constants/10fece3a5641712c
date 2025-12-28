@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/schemas.py
+# hypothesis_version: 6.148.7
+
+[100, 255, 500, 'Department name', 'Flow node order', 'Flow node text', 'Hearing log content', 'Project ID', 'Project name', 'Project status', 'id', 'order']

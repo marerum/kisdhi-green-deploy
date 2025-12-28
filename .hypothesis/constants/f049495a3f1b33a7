@@ -1,0 +1,4 @@
+# file: /Users/ishidzukayouhei/Desktop/kishimen/backend/app/services/ai.py
+# hypothesis_version: 6.148.7
+
+[0.3, 10.0, 30.0, 90.0, 200, 1000, 10000, '...', '5-8', 'AI_SERVICE_INIT', 'OPENAI_API_KEY', '```', '```json', 'actual_count', 'actual_orders', 'actual_type', 'auth_error', 'available_fields', 'better', 'connection', 'connection_error', 'content', 'could', 'duplicate_orders', 'empty_response', 'enhancement', 'error_details', 'evaluation', 'expected_orders', 'flow_nodes', 'gpt-3.5-turbo', 'improve', 'init_error', 'invalid_type', 'json_format', 'might', 'missing_field', 'node_count', 'node_ordering', 'optimize', 'order', 'order_value', 'parse_error', 'rate_limit', 'rate_limit_error', 'rating', 'raw_response', 'recommend', 'required_range', 'retry_exhausted', 'role', 'score', 'should', 'suggest', 'system', 'test', 'text', 'text_value', 'timeout', 'unexpected', 'unexpected_error', 'user']
