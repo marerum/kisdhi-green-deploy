@@ -51,7 +51,6 @@ export default function WrappedText({
   return (
     <foreignObject x={x} y={y} width={width} height={height} className="pointer-events-none">
       <div
-        xmlns="http://www.w3.org/1999/xhtml"
         style={{
           width: '100%',
           height: '100%',
@@ -63,6 +62,7 @@ export default function WrappedText({
           padding: `${padding}px`,
           boxSizing: 'border-box',
         }}
+        {...({ xmlns: "http://www.w3.org/1999/xhtml" } as any)}
       >
         <div
           style={{

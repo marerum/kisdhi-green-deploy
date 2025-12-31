@@ -1116,8 +1116,6 @@ export default function FlowCanvas({
                 key={component.id}
                 component={component}
                 allComponents={components}
-                connections={connections}
-                onConnectionsChange={onConnectionsChange}
                 isSelected={isSelected(component.id)}
                 isHovered={hoveredComponentId === component.id}
                 isDragging={isComponentDraggingFn(component.id)}

@@ -13,6 +13,7 @@ import {
   FlowNodeCreate,
   FlowNodeUpdate,
   FlowNodeResponse,
+  FlowGenerationResponse,
   FlowReorderRequest,
   ApiError,
 } from '@/types/api';
@@ -328,6 +329,79 @@ export const hearingApi = {
       method: 'DELETE',
     }, 'Deleting hearing log');
   },
+
+  /**
+   * Transcribe an audio blob for a project using backend proxy to OpenAI
+   */
+  async transcribeAudio(projectId: number, file: File): Promise<{text: string}> {
+    console.log('=== API CLIENT: transcribeAudio ===');
+    console.log('Project ID:', projectId);
+    console.log('File details:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified
+    });
+    
+    const url = `${API_BASE_URL}/api/projects/${projectId}/hearing/transcribe`;
+    console.log('Request URL:', url);
+
+    const form = new FormData();
+    form.append('file', file, file.name || 'recording.webm');
+    
+    console.log('FormData created, file appended');
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log('Request timeout after 60 seconds');
+      controller.abort();
+    }, 60000); // 60s
+
+    try {
+      console.log('Sending request to backend...');
+      const startTime = Date.now();
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      });
+      
+      const endTime = Date.now();
+      console.log(`Request completed in ${endTime - startTime}ms`);
+      console.log('Response status:', res.status, res.statusText);
+      
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        console.error('Request failed with status:', res.status);
+        let data: any = null;
+        try { 
+          data = await res.json(); 
+          console.error('Error response data:', data);
+        } catch (e) {
+          console.error('Failed to parse error response as JSON');
+        }
+        throw ApiClientError.fromResponse(res, data);
+      }
+
+      console.log('Parsing successful response...');
+      const data = await res.json();
+      console.log('Response data:', data);
+      console.log('Extracted text length:', data.text ? data.text.length : 0);
+      
+      return { text: data.text };
+    } catch (error) {
+      console.error('=== API CLIENT ERROR ===');
+      console.error('Error type:', error?.constructor?.name);
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Full error object:', error);
+      
+      clearTimeout(timeoutId);
+      if (error instanceof ApiClientError) throw error;
+      throw ApiClientError.fromNetworkError(error as Error);
+    }
+  },
 };
 
 // Flow API functions
@@ -342,8 +416,8 @@ export const flowApi = {
   /**
    * Generate flow from hearing logs
    */
-  async generateFlow(projectId: number): Promise<FlowNodeResponse[]> {
-    return makeRequestWithFeedback<FlowNodeResponse[]>(`/api/projects/${projectId}/flow/generate`, {
+  async generateFlow(projectId: number): Promise<FlowGenerationResponse> {
+    return makeRequestWithFeedback<FlowGenerationResponse>(`/api/projects/${projectId}/flow/generate`, {
       method: 'POST',
     }, 'Generating flow diagram', FLOW_GENERATION_TIMEOUT);
   },

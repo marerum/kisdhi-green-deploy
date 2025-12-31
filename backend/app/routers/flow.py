@@ -9,7 +9,7 @@ import logging
 
 from ..database import get_db
 from ..models import Project, HearingLog, FlowNode
-from ..schemas import FlowNodeResponse, FlowNodeCreate, FlowNodeUpdate, FlowReorderRequest
+from ..schemas import FlowNodeResponse, FlowNodeCreate, FlowNodeUpdate, FlowReorderRequest, FlowGenerationResponse
 from typing import Dict, Any, Optional
 from ..services.ai import ai_service
 
@@ -39,7 +39,7 @@ router = APIRouter(
 )
 
 
-@router.post("/projects/{project_id}/flow/generate", response_model=List[FlowNodeResponse])
+@router.post("/projects/{project_id}/flow/generate", response_model=FlowGenerationResponse)
 async def generate_flow(
     project_id: int,
     db: Session = Depends(get_db)
@@ -52,7 +52,7 @@ async def generate_flow(
         db: Database session
         
     Returns:
-        List of generated flow nodes
+        Generated flow data including actors, steps, and flow nodes
         
     Raises:
         HTTPException: If project not found, no hearing logs, or AI generation fails
@@ -88,11 +88,13 @@ async def generate_flow(
         
         # Create new flow nodes from AI response
         created_nodes = []
-        for node_data in flow_data:
+        for node_data in flow_data["flow_nodes"]:
             flow_node = FlowNode(
                 project_id=project_id,
                 text=node_data["text"],
-                order=node_data["order"]
+                order=node_data["order"],
+                actor=node_data.get("actor"),
+                step=node_data.get("step")
             )
             db.add(flow_node)
             created_nodes.append(flow_node)
@@ -106,7 +108,12 @@ async def generate_flow(
         
         logger.info(f"Generated {len(created_nodes)} flow nodes for project {project_id}")
         
-        return created_nodes
+        # Return the complete flow data
+        return {
+            "actors": flow_data["actors"],
+            "steps": flow_data["steps"],
+            "flow_nodes": created_nodes
+        }
         
     except ValueError as e:
         logger.error(f"Validation error during flow generation: {str(e)}")

@@ -74,6 +74,8 @@ class FlowNode(Base):
     project_id: Mapped[int] = Column(Integer, ForeignKey("projects.id"), nullable=False)
     text: Mapped[str] = Column(String(500), nullable=False)
     order: Mapped[int] = Column(Integer, nullable=False)
+    actor: Mapped[Optional[str]] = Column(String(100), nullable=True)  # Actor/role for lane-step template
+    step: Mapped[Optional[str]] = Column(String(100), nullable=True)   # Step name for lane-step template
     created_at: Mapped[datetime] = Column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 

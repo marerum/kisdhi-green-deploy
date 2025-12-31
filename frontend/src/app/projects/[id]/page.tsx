@@ -63,10 +63,20 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
     try {
       setIsGeneratingFlow(true);
       setError(null);
-      const generatedNodes = await flowApi.generateFlow(projectId);
+      const flowResponse = await flowApi.generateFlow(projectId);
       
-      // Navigate to flow page after successful generation
-      if (generatedNodes && generatedNodes.length > 0) {
+      // Check if we have valid data
+      if (flowResponse && flowResponse.flow_nodes && flowResponse.flow_nodes.length > 0) {
+        // Store the generated data in sessionStorage to pass to the flow page
+        const flowData = {
+          components: null, // Will be converted in the flow page
+          connections: null, // Will be converted in the flow page
+          flow_nodes: flowResponse.flow_nodes,
+          timestamp: Date.now() // To ensure fresh data
+        };
+        sessionStorage.setItem(`flow-generated-${projectId}`, JSON.stringify(flowData));
+        
+        // Navigate to flow page - it will pick up the generated data
         router.push(`/projects/${projectId}/flow`);
       } else {
         setError('フロー図の生成に成功しましたが、データが空でした。再度お試しください。');

@@ -72,11 +72,32 @@ class FlowNodeResponse(BaseModel):
     project_id: int
     text: str
     order: int
+    actor: Optional[str] = None
+    step: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ActorSchema(BaseModel):
+    """Schema for actor/role information."""
+    name: str = Field(..., description="Actor name")
+    role: str = Field(..., description="Actor role description")
+
+
+class StepSchema(BaseModel):
+    """Schema for step information."""
+    name: str = Field(..., description="Step name")
+    description: str = Field(..., description="Step description")
+
+
+class FlowGenerationResponse(BaseModel):
+    """Schema for complete flow generation response."""
+    actors: List[ActorSchema] = Field(..., description="List of actors/roles")
+    steps: List[StepSchema] = Field(..., description="List of steps")
+    flow_nodes: List[FlowNodeResponse] = Field(..., description="List of flow nodes")
 
 
 class FlowReorderRequest(BaseModel):

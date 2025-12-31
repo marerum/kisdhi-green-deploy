@@ -46,29 +46,66 @@ export default function HearingPage({ params }: HearingPageProps) {
     }
   }, [projectId]);
 
+  // Debug: Track hearing logs changes
+  useEffect(() => {
+    console.log('=== Hearing logs state changed ===');
+    console.log('New hearing logs count:', hearingLogs.length);
+    console.log('Hearing logs:', hearingLogs.map(log => ({ 
+      id: log.id, 
+      content: log.content.substring(0, 50) + '...',
+      created_at: log.created_at 
+    })));
+  }, [hearingLogs]);
+
   const handleHearingLogAdded = (newLog: HearingLogResponse) => {
+    console.log('=== Parent: handleHearingLogAdded called ===');
+    console.log('New log received:', newLog);
+    console.log('Current hearing logs count:', hearingLogs.length);
+    
     setHearingLogs(prev => {
+      console.log('Previous logs:', prev.map(log => ({ id: log.id, content: log.content.substring(0, 50) + '...' })));
+      
       // Check if log already exists (for updates)
       const existingIndex = prev.findIndex(log => log.id === newLog.id);
+      console.log('Existing log index:', existingIndex);
+      
       if (existingIndex >= 0) {
         // Update existing log
         const updated = [...prev];
         updated[existingIndex] = newLog;
+        console.log('Updated existing log at index:', existingIndex);
+        console.log('New logs after update:', updated.map(log => ({ id: log.id, content: log.content.substring(0, 50) + '...' })));
         return updated;
       } else {
         // Add new log
-        return [...prev, newLog];
+        const newLogs = [...prev, newLog];
+        console.log('Added new log, total count:', newLogs.length);
+        console.log('New logs after add:', newLogs.map(log => ({ id: log.id, content: log.content.substring(0, 50) + '...' })));
+        return newLogs;
       }
     });
   };
 
   const handleHearingLogUpdated = (updatedLog: HearingLogResponse) => {
+    console.log('=== Parent: handleHearingLogUpdated called ===');
+    console.log('Updated log received:', updatedLog);
+    console.log('Current hearing logs count:', hearingLogs.length);
+    
     setHearingLogs(prev => {
+      console.log('Previous logs:', prev.map(log => ({ id: log.id, content: log.content.substring(0, 50) + '...' })));
+      
       const updated = [...prev];
       const index = updated.findIndex(log => log.id === updatedLog.id);
+      console.log('Found log to update at index:', index);
+      
       if (index >= 0) {
         updated[index] = updatedLog;
+        console.log('Updated log at index:', index);
+        console.log('New logs after update:', updated.map(log => ({ id: log.id, content: log.content.substring(0, 50) + '...' })));
+      } else {
+        console.log('Warning: Could not find log to update with ID:', updatedLog.id);
       }
+      
       return updated;
     });
     setEditingLog(null); // Clear editing state
@@ -99,11 +136,20 @@ export default function HearingPage({ params }: HearingPageProps) {
     try {
       setIsGenerating(true);
       setError(null);
-      const generatedNodes = await flowApi.generateFlow(projectId);
+      const flowResponse = await flowApi.generateFlow(projectId);
       
-      // Show success message briefly before navigation
-      if (generatedNodes && generatedNodes.length > 0) {
-        // Navigate to flow page after successful generation
+      // Check if we have valid data
+      if (flowResponse && flowResponse.flow_nodes && flowResponse.flow_nodes.length > 0) {
+        // Store the generated data in sessionStorage to pass to the flow page
+        const flowData = {
+          components: null, // Will be converted in the flow page
+          connections: null, // Will be converted in the flow page
+          flow_nodes: flowResponse.flow_nodes,
+          timestamp: Date.now() // To ensure fresh data
+        };
+        sessionStorage.setItem(`flow-generated-${projectId}`, JSON.stringify(flowData));
+        
+        // Navigate to flow page - it will pick up the generated data
         router.push(`/projects/${projectId}/flow`);
       } else {
         setError('フロー図の生成に成功しましたが、データが空でした。再度お試しください。');

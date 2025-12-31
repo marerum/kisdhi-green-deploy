@@ -72,7 +72,7 @@ class AIService:
             raise
     
     @handle_ai_service_errors("business flow generation")
-    async def generate_business_flow(self, hearing_logs: List[str]) -> List[Dict[str, Any]]:
+    async def generate_business_flow(self, hearing_logs: List[str]) -> Dict[str, Any]:
         """
         Generate a business flow from hearing logs with comprehensive error handling.
         
@@ -80,7 +80,7 @@ class AIService:
             hearing_logs: List of hearing log content strings
             
         Returns:
-            List of flow nodes with text and order information
+            Dictionary containing actors, steps, and flow_nodes
             
         Raises:
             ValidationError: If service not initialized or invalid input
@@ -125,13 +125,13 @@ class AIService:
                     raise AIServiceError("Empty response from AI service", "empty_response")
                 
                 # Parse and validate the response
-                flow_nodes = self._parse_ai_response(ai_response)
+                flow_data = self._parse_ai_response(ai_response)
                 
                 # Validate the flow meets requirements
-                self._validate_flow_structure(flow_nodes)
+                self._validate_flow_structure(flow_data)
                 
-                logger.info(f"Successfully generated flow with {len(flow_nodes)} nodes on attempt {attempt + 1}")
-                return flow_nodes
+                logger.info(f"Successfully generated flow with {len(flow_data['flow_nodes'])} nodes, {len(flow_data['actors'])} actors, {len(flow_data['steps'])} steps on attempt {attempt + 1}")
+                return flow_data
                 
             except asyncio.TimeoutError:
                 last_error = AIServiceError(
@@ -183,7 +183,7 @@ class AIService:
             messages=[
                 {
                     "role": "system",
-                    "content": "あなたはビジネスプロセス整理の専門家です。インタビュー内容を構造化されたビジネスフロー手順に変換することが仕事です。分岐、改善提案、評価、採点を含まない5-8個の線形プロセス手順を含む有効なJSONのみで応答してください。すべてのステップ説明は日本語で記述してください。"
+                    "content": "あなたはビジネスプロセス整理の専門家です。インタビュー内容を構造化されたビジネスフロー手順に変換することが仕事です。必ず以下の形式でJSONを返してください：{\"actors\": [{\"name\": \"登場人物名\", \"role\": \"役割\"}], \"steps\": [{\"name\": \"ステップ名\", \"description\": \"説明\"}], \"flow_nodes\": [{\"text\": \"アクション\", \"order\": 0, \"actor\": \"登場人物名\", \"step\": \"ステップ名\"}]}。すべての説明は日本語で記述してください。"
                 },
                 {
                     "role": "user",
@@ -205,33 +205,46 @@ class AIService:
             Formatted prompt string
         """
         return f"""
-以下のビジネスプロセスインタビュー内容に基づいて、5-8個の線形ステップからなる構造化されたビジネスフローを作成してください。
+以下のビジネスプロセスインタビュー内容に基づいて、構造化されたビジネスフローを作成してください。
 
 インタビュー内容:
 {hearing_content}
 
 要件:
-- 正確に5-8個のプロセスステップを作成してください
-- 各ステップは明確で実行可能なビジネスプロセスステップである必要があります
+- 3-5人の登場人物（役割）を特定してください
+- 3-8個のプロセスステップを作成してください
+- 各ステップで各登場人物が行うアクションを明確にしてください
 - ステップは論理的な時系列順序である必要があります
 - 分岐、条件ロジック、並列プロセスは含めないでください
 - 改善提案、評価、採点は含めないでください
 - 既存のプロセスを改善するのではなく、整理することに焦点を当ててください
-- すべてのステップ説明は日本語で記述してください
+- すべての説明は日本語で記述してください
 
 以下の正確な形式で有効なJSONで応答してください:
 {{
+  "actors": [
+    {{"name": "営業担当", "role": "商品提案と顧客対応"}},
+    {{"name": "顧客", "role": "商品検討と購入決定"}},
+    {{"name": "管理者", "role": "注文確認と発送手続き"}}
+  ],
+  "steps": [
+    {{"name": "商品提案", "description": "営業担当が顧客に商品を提案する"}},
+    {{"name": "検討・決定", "description": "顧客が商品を検討し購入を決定する"}},
+    {{"name": "注文処理", "description": "管理者が注文を確認し発送手続きを行う"}}
+  ],
   "flow_nodes": [
-    {{"text": "ステップの説明", "order": 0}},
-    {{"text": "ステップの説明", "order": 1}},
-    ...
+    {{"text": "顧客に商品を提案する", "order": 0, "actor": "営業担当", "step": "商品提案"}},
+    {{"text": "商品を検討する", "order": 1, "actor": "顧客", "step": "検討・決定"}},
+    {{"text": "購入を決定する", "order": 2, "actor": "顧客", "step": "検討・決定"}},
+    {{"text": "注文を確認する", "order": 3, "actor": "管理者", "step": "注文処理"}},
+    {{"text": "発送手続きを行う", "order": 4, "actor": "管理者", "step": "注文処理"}}
   ]
 }}
 
 応答は有効なJSONのみで、追加のテキストや説明は含めないでください。
 """
     
-    def _parse_ai_response(self, response: str) -> List[Dict[str, Any]]:
+    def _parse_ai_response(self, response: str) -> Dict[str, Any]:
         """
         Parse and validate AI response with enhanced error handling.
         
@@ -239,7 +252,7 @@ class AIService:
             response: Raw AI response string
             
         Returns:
-            List of flow node dictionaries
+            Dictionary containing actors, steps, and flow_nodes
             
         Raises:
             ValidationError: If response format is invalid
@@ -265,14 +278,49 @@ class AIService:
                     {"raw_response": response[:200]}
                 )
             
-            # Extract flow nodes
-            if "flow_nodes" not in parsed_data:
+            # Validate required fields
+            required_fields = ["actors", "steps", "flow_nodes"]
+            for field in required_fields:
+                if field not in parsed_data:
+                    raise ValidationError(
+                        f"AI response missing '{field}' field",
+                        "missing_field",
+                        {"available_fields": list(parsed_data.keys())}
+                    )
+            
+            # Validate actors
+            actors = parsed_data["actors"]
+            if not isinstance(actors, list) or len(actors) < 3 or len(actors) > 5:
                 raise ValidationError(
-                    "AI response missing 'flow_nodes' field",
-                    "missing_field",
-                    {"available_fields": list(parsed_data.keys())}
+                    "Actors must be a list with 3-5 items",
+                    "actors_count",
+                    {"actual_count": len(actors) if isinstance(actors, list) else "not_list"}
                 )
             
+            for i, actor in enumerate(actors):
+                if not isinstance(actor, dict) or "name" not in actor or "role" not in actor:
+                    raise ValidationError(
+                        f"Actor {i} must have 'name' and 'role' fields",
+                        f"actor_{i}_format"
+                    )
+            
+            # Validate steps
+            steps = parsed_data["steps"]
+            if not isinstance(steps, list) or len(steps) < 3 or len(steps) > 10:
+                raise ValidationError(
+                    "Steps must be a list with 3-10 items",
+                    "steps_count",
+                    {"actual_count": len(steps) if isinstance(steps, list) else "not_list"}
+                )
+            
+            for i, step in enumerate(steps):
+                if not isinstance(step, dict) or "name" not in step or "description" not in step:
+                    raise ValidationError(
+                        f"Step {i} must have 'name' and 'description' fields",
+                        f"step_{i}_format"
+                    )
+            
+            # Extract flow nodes
             flow_nodes = parsed_data["flow_nodes"]
             
             if not isinstance(flow_nodes, list):
@@ -283,6 +331,9 @@ class AIService:
                 )
             
             # Validate each node
+            actor_names = [actor["name"] for actor in actors]
+            step_names = [step["name"] for step in steps]
+            
             for i, node in enumerate(flow_nodes):
                 if not isinstance(node, dict):
                     raise ValidationError(
@@ -291,12 +342,14 @@ class AIService:
                         {"actual_type": type(node).__name__}
                     )
                 
-                if "text" not in node or "order" not in node:
-                    raise ValidationError(
-                        f"Flow node {i} missing required fields 'text' or 'order'",
-                        f"node_{i}_fields",
-                        {"available_fields": list(node.keys())}
-                    )
+                required_node_fields = ["text", "order", "actor", "step"]
+                for field in required_node_fields:
+                    if field not in node:
+                        raise ValidationError(
+                            f"Flow node {i} missing required field '{field}'",
+                            f"node_{i}_fields",
+                            {"available_fields": list(node.keys())}
+                        )
                 
                 if not isinstance(node["text"], str) or not node["text"].strip():
                     raise ValidationError(
@@ -311,8 +364,27 @@ class AIService:
                         f"node_{i}_order",
                         {"order_value": node.get("order")}
                     )
+                
+                if node["actor"] not in actor_names:
+                    raise ValidationError(
+                        f"Flow node {i} 'actor' must be one of the defined actors",
+                        f"node_{i}_actor",
+                        {"actor_value": node.get("actor"), "valid_actors": actor_names}
+                    )
+                
+                if node["step"] not in step_names:
+                    raise ValidationError(
+                        f"Flow node {i} 'step' must be one of the defined steps",
+                        f"node_{i}_step",
+                        {"step_value": node.get("step"), "valid_steps": step_names}
+                    )
             
-            return flow_nodes
+            # Return the complete parsed data including actors and steps
+            return {
+                "actors": actors,
+                "steps": steps,
+                "flow_nodes": flow_nodes
+            }
             
         except ValidationError:
             raise
@@ -324,22 +396,42 @@ class AIService:
                 {"error_details": str(e)}
             )
     
-    def _validate_flow_structure(self, flow_nodes: List[Dict[str, Any]]) -> None:
+    def _validate_flow_structure(self, flow_data: Dict[str, Any]) -> None:
         """
         Validate that the flow structure meets requirements.
         
         Args:
-            flow_nodes: List of flow node dictionaries
+            flow_data: Dictionary containing actors, steps, and flow_nodes
             
         Raises:
             ValidationError: If flow structure is invalid
         """
-        # Check node count (5-8 nodes)
-        if len(flow_nodes) < 5 or len(flow_nodes) > 8:
+        actors = flow_data["actors"]
+        steps = flow_data["steps"]
+        flow_nodes = flow_data["flow_nodes"]
+        
+        # Check actor count (3-5 actors)
+        if len(actors) < 3 or len(actors) > 5:
             raise ValidationError(
-                f"Flow must contain 5-8 nodes, got {len(flow_nodes)}",
+                f"Flow must contain 3-5 actors, got {len(actors)}",
+                "actor_count",
+                {"actual_count": len(actors), "required_range": "3-5"}
+            )
+        
+        # Check step count (3-10 steps)
+        if len(steps) < 3 or len(steps) > 10:
+            raise ValidationError(
+                f"Flow must contain 3-10 steps, got {len(steps)}",
+                "step_count",
+                {"actual_count": len(steps), "required_range": "3-10"}
+            )
+        
+        # Check node count
+        if len(flow_nodes) < 3 or len(flow_nodes) > 30:  # Allow more nodes since we have multiple actors
+            raise ValidationError(
+                f"Flow must contain 3-30 nodes, got {len(flow_nodes)}",
                 "node_count",
-                {"actual_count": len(flow_nodes), "required_range": "5-8"}
+                {"actual_count": len(flow_nodes), "required_range": "3-30"}
             )
         
         # Check for sequential ordering

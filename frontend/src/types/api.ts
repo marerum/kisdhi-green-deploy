@@ -53,8 +53,26 @@ export interface FlowNodeResponse {
   project_id: number;
   text: string;
   order: number;
+  actor?: string;
+  step?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ActorSchema {
+  name: string;
+  role: string;
+}
+
+export interface StepSchema {
+  name: string;
+  description: string;
+}
+
+export interface FlowGenerationResponse {
+  actors: ActorSchema[];
+  steps: StepSchema[];
+  flow_nodes: FlowNodeResponse[];
 }
 
 export interface FlowReorderRequest {

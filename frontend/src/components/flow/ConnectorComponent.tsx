@@ -9,7 +9,9 @@ import FlowComponentBase, { FlowComponentBaseProps } from './FlowComponentBase';
 import { FlowComponentData } from '@/types/flowComponents';
 import { createConnection, updateConnectionPath, connectionExists } from '@/utils/connectionUtils';
 
-export interface ConnectorComponentProps extends Omit<FlowComponentBaseProps, 'children'> {}
+export interface ConnectorComponentProps extends Omit<FlowComponentBaseProps, 'children'> {
+  allComponents?: FlowComponentData[];
+}
 
 export default function ConnectorComponent(props: ConnectorComponentProps) {
   const { data } = props as { data: FlowComponentData };
@@ -33,7 +35,7 @@ export default function ConnectorComponent(props: ConnectorComponentProps) {
     event.preventDefault();
     setIsResizing(which);
 
-    const svg = (event.currentTarget as Element).ownerSVGElement as SVGSVGElement | null;
+    const svg = (event.currentTarget as SVGElement).ownerSVGElement as SVGSVGElement | null;
     if (!svg) return;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
@@ -49,10 +51,13 @@ export default function ConnectorComponent(props: ConnectorComponentProps) {
         const allComponents = (props as any).allComponents as FlowComponentData[] | undefined;
         const SNAP_DISTANCE = 24;
         if (allComponents && allComponents.length > 0) {
-          let best: null | { x: number; y: number; dist: number } = null;
-          allComponents.forEach((c) => {
-            if (c.id === data.id) return;
-            (c.connectionPoints || []).forEach((cp: any) => {
+          let best: { x: number; y: number; dist: number } | undefined = undefined;
+          for (let i = 0; i < allComponents.length; i++) {
+            const c = allComponents[i];
+            if (c.id === data.id) continue;
+            const cps = (c.connectionPoints || []) as any[];
+            for (let j = 0; j < cps.length; j++) {
+              const cp = cps[j];
               let px = c.position.x;
               let py = c.position.y;
               const offset = typeof cp.offset === 'number' ? cp.offset : 0.5;
@@ -78,14 +83,15 @@ export default function ConnectorComponent(props: ConnectorComponentProps) {
               const dx = px - loc.x;
               const dy = py - loc.y;
               const d = Math.sqrt(dx * dx + dy * dy);
-              if (best === null || d < best.dist) {
+              if (!best || d < best.dist) {
                 best = { x: px, y: py, dist: d };
               }
-            });
-          });
+            }
+          }
 
           if (best && best.dist <= SNAP_DISTANCE) {
-            loc = { x: best.x, y: best.y };
+            loc.x = best.x;
+            loc.y = best.y;
           }
         }
       } catch (err) {

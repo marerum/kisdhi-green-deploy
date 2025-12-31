@@ -181,9 +181,15 @@ export class ComponentFactory {
     position: Point,
     overrides?: Partial<FlowComponentData>
   ): FlowComponentData {
-    const id = overrides?.id || `${template.type}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    console.log('=== ComponentFactory.createFromTemplate called ===');
+    console.log('Template:', template);
+    console.log('Position:', position);
+    console.log('Overrides:', overrides);
     
-    return {
+    const id = overrides?.id || `${template.type}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    console.log('Generated ID:', id);
+    
+    const result = {
       id,
       type: template.type,
       position,
@@ -199,6 +205,9 @@ export class ComponentFactory {
       visible: overrides?.visible !== false,
       metadata: overrides?.metadata || {},
     };
+    
+    console.log('Created component result:', result);
+    return result;
   }
 
   /**
@@ -209,13 +218,24 @@ export class ComponentFactory {
     position: Point,
     overrides?: Partial<FlowComponentData>
   ): FlowComponentData | null {
+    console.log('=== ComponentFactory.createByType called ===');
+    console.log('Type:', type);
+    console.log('Position:', position);
+    console.log('Overrides:', overrides);
+    console.log('Available templates:', COMPONENT_TEMPLATES);
+    
     const template = COMPONENT_TEMPLATES.find(t => t.type === type);
+    console.log('Found template:', template);
+    
     if (!template) {
       console.error(`Unknown component type: ${type}`);
+      console.error('Available types:', COMPONENT_TEMPLATES.map(t => t.type));
       return null;
     }
 
-    return ComponentFactory.createFromTemplate(template, position, overrides);
+    const result = ComponentFactory.createFromTemplate(template, position, overrides);
+    console.log('Created component:', result);
+    return result;
   }
 
   /**
