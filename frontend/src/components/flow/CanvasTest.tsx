@@ -9,6 +9,7 @@ import React, { useState, useCallback } from 'react';
 import FlowCanvas from './FlowCanvas';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { FlowComponentData, Connection, DraggedComponent } from '@/types/flowComponents';
+import { UndoOperation } from '@/hooks/useUndo';
 
 export interface CanvasTestProps {
   showPropertiesPanel?: boolean;
@@ -19,6 +20,7 @@ export interface CanvasTestProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  recordOperation?: (operation: UndoOperation) => void;
   onFlowGenerated?: (components: FlowComponentData[], connections: Connection[]) => void;
   generatedFlowData?: { 
     components: FlowComponentData[]; 
@@ -37,6 +39,7 @@ export default function CanvasTest({
   onRedo,
   canUndo = false,
   canRedo = false,
+  recordOperation,
   onFlowGenerated,
   generatedFlowData,
   projectId = null,
@@ -45,6 +48,10 @@ export default function CanvasTest({
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
+  
+  // Track drag state to prevent recording undo operations during drag
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartComponents, setDragStartComponents] = useState<FlowComponentData[]>([]);
 
   // Debug components state changes
   React.useEffect(() => {
@@ -142,6 +149,38 @@ export default function CanvasTest({
   };
 
   const handleComponentsChange = useCallback((newComponents: FlowComponentData[]) => {
+    // Skip if components are identical (avoid unnecessary undo operations)
+    if (JSON.stringify(components) === JSON.stringify(newComponents)) {
+      return;
+    }
+    
+    // Record undo operation before making changes (only if recordOperation is available and not dragging)
+    if (recordOperation && components.length > 0 && !isDragging) {
+      const previousComponents = JSON.parse(JSON.stringify(components)); // Deep copy
+      
+      recordOperation({
+        type: 'update',
+        description: `コンポーネントの変更 (${previousComponents.length} → ${newComponents.length})`,
+        undo: async () => {
+          setComponents(previousComponents);
+          
+          // Also update localStorage immediately
+          if (saveKey) {
+            const dataWithTimestamp = {
+              components: previousComponents,
+              connections,
+              timestamp: Date.now()
+            };
+            try {
+              localStorage.setItem(saveKey, JSON.stringify(dataWithTimestamp));
+            } catch (err) {
+              console.error('Failed to save undo state:', err);
+            }
+          }
+        }
+      });
+    }
+    
     setComponents(newComponents);
     
     // 即座に保存を実行（debounceをバイパス）
@@ -154,10 +193,10 @@ export default function CanvasTest({
       try {
         localStorage.setItem(saveKey, JSON.stringify(dataWithTimestamp));
       } catch (err) {
-        console.error('❌ Failed to immediately save:', err);
+        console.error('Failed to immediately save:', err);
       }
     }
-  }, [components, connections, saveKey]);
+  }, [components, connections, saveKey, recordOperation, isDragging]);
 
   const handleConnectionsChange = useCallback((newConnections: Connection[]) => {
     setConnections(newConnections);
@@ -171,20 +210,54 @@ export default function CanvasTest({
     setSelectedConnectionIds(selectedIds);
   }, []);
 
-  // Add keyboard shortcut for undo (Ctrl+Z / Cmd+Z)
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (onUndo && canUndo) {
-          onUndo();
-        }
-      }
-    };
+  // Handle drag start - record initial state and set dragging flag
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+    setDragStartComponents(JSON.parse(JSON.stringify(components))); // Deep copy
+  }, [components]);
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onUndo, canUndo]);
+  // Handle drag end - record undo operation for the entire drag
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    
+    // Record undo operation for the entire drag operation
+    if (recordOperation && dragStartComponents.length > 0) {
+      const finalComponents = JSON.parse(JSON.stringify(components)); // Deep copy
+      const startComponents = dragStartComponents;
+      
+      // Check if anything actually changed
+      const hasChanged = JSON.stringify(startComponents) !== JSON.stringify(finalComponents);
+      
+      if (hasChanged) {
+        recordOperation({
+          type: 'update',
+          description: 'ドラッグ操作',
+          undo: async () => {
+            setComponents(startComponents);
+            
+            // Also update localStorage immediately
+            if (saveKey) {
+              const dataWithTimestamp = {
+                components: startComponents,
+                connections,
+                timestamp: Date.now()
+              };
+              try {
+                localStorage.setItem(saveKey, JSON.stringify(dataWithTimestamp));
+              } catch (err) {
+                console.error('Failed to save drag undo state:', err);
+              }
+            }
+          }
+        });
+      }
+    }
+    
+    // Clear drag start components
+    setDragStartComponents([]);
+  }, [components, dragStartComponents, recordOperation, connections, saveKey]);
+
+
 
   return (
     <div className="p-8">
@@ -209,6 +282,8 @@ export default function CanvasTest({
           onRedo={onRedo}
           canUndo={canUndo}
           canRedo={canRedo}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
           className="rounded-lg border border-gray-200"
         />
       </div>

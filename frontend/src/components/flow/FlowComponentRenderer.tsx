@@ -19,12 +19,14 @@ export interface FlowComponentRendererProps extends Omit<FlowComponentBaseProps,
   component: FlowComponentData;
   connectingFromPointId?: string | null;
   allComponents?: FlowComponentData[];
+  selectedComponentsCount?: number;
 }
 
 export default function FlowComponentRenderer({
   component,
   connectingFromPointId,
   allComponents,
+  selectedComponentsCount = 1,
   ...baseProps
 }: FlowComponentRendererProps) {
   // Don't render if component is not visible
@@ -35,6 +37,8 @@ export default function FlowComponentRenderer({
   const props = {
     ...baseProps,
     data: component,
+    // Hide individual resize handles when multiple components are selected
+    showResizeHandles: selectedComponentsCount <= 1,
   };
 
   switch (component.type) {

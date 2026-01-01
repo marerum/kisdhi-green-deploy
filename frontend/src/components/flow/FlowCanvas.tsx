@@ -26,6 +26,7 @@ import { AutoConnectionManager } from './ConnectionManager';
 import PropertiesPanel from './PropertiesPanel';
 import ExportDialog from './ExportDialog';
 import ShortcutHelp, { ShortcutHelpButton } from './ShortcutHelp';
+import GroupResizeHandles from './GroupResizeHandles';
 
 export interface FlowCanvasProps {
   width?: number;
@@ -47,6 +48,8 @@ export interface FlowCanvasProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   onFitToContent?: (fitToContentFn: (components?: FlowComponentData[] | null) => void) => void;
   children?: React.ReactNode;
 }
@@ -71,6 +74,8 @@ export default function FlowCanvas({
   onRedo,
   canUndo = false,
   canRedo = false,
+  onDragStart,
+  onDragEnd,
   onFitToContent,
   children,
 }: FlowCanvasProps) {
@@ -86,6 +91,12 @@ export default function FlowCanvas({
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [copiedComponents, setCopiedComponents] = useState<FlowComponentData[]>([]);
+  
+  // Cursor mode state (hand tool vs selection tool)
+  const [cursorMode, setCursorMode] = useState<'hand' | 'selection'>('hand');
+  const [isBoxSelecting, setIsBoxSelecting] = useState(false);
+  const [boxSelectionStart, setBoxSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [boxSelectionEnd, setBoxSelectionEnd] = useState<{ x: number; y: number } | null>(null);
 
   // Connection system
   const {
@@ -315,11 +326,13 @@ export default function FlowCanvas({
 
   // Define keyboard shortcuts
   const platformModifier = getPlatformModifierKey();
+  
   const shortcuts: KeyboardShortcut[] = [
     // Selection shortcuts
     {
       key: 'a',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: '全て選択',
       category: '選択',
       action: () => selectAll(components),
@@ -381,7 +394,8 @@ export default function FlowCanvas({
     },
     {
       key: 'd',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: '選択したコンポーネントを複製',
       category: '編集',
       action: () => {
@@ -392,10 +406,25 @@ export default function FlowCanvas({
       disabled: selectedIds.length === 0,
     },
 
+    // Tool shortcuts
+    {
+      key: 'h',
+      description: '手のツール（パン）',
+      category: 'ツール',
+      action: () => setCursorMode('hand'),
+    },
+    {
+      key: 'v',
+      description: '選択ツール（矩形選択）',
+      category: 'ツール',
+      action: () => setCursorMode('selection'),
+    },
+
     // Copy/Paste shortcuts
     {
       key: 'c',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: '選択したコンポーネントをコピー',
       category: 'コピー&ペースト',
       action: handleCopy,
@@ -403,7 +432,8 @@ export default function FlowCanvas({
     },
     {
       key: 'v',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'コピーしたコンポーネントをペースト',
       category: 'コピー&ペースト',
       action: handlePaste,
@@ -413,7 +443,8 @@ export default function FlowCanvas({
     // Undo/Redo shortcuts
     {
       key: 'z',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: '元に戻す',
       category: '履歴',
       action: () => onUndo?.(),
@@ -421,7 +452,8 @@ export default function FlowCanvas({
     },
     {
       key: 'y',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'やり直し',
       category: '履歴',
       action: () => onRedo?.(),
@@ -429,7 +461,8 @@ export default function FlowCanvas({
     },
     {
       key: 'z',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       shiftKey: true,
       description: 'やり直し',
       category: '履歴',
@@ -502,14 +535,16 @@ export default function FlowCanvas({
     // View shortcuts
     {
       key: '0',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'キャンバスをリセット',
       category: '表示',
       action: resetCanvas,
     },
     {
       key: '=',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'ズームイン',
       category: '表示',
       action: () => canZoomIn && setZoom(canvasState.transform.scale + 0.1),
@@ -517,7 +552,8 @@ export default function FlowCanvas({
     },
     {
       key: '-',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'ズームアウト',
       category: '表示',
       action: () => canZoomOut && setZoom(canvasState.transform.scale - 0.1),
@@ -541,7 +577,8 @@ export default function FlowCanvas({
     // Export shortcuts
     {
       key: 'e',
-      [platformModifier]: true,
+      ctrlKey: platformModifier === 'ctrlKey',
+      metaKey: platformModifier === 'metaKey',
       description: 'エクスポートダイアログを開く',
       category: 'エクスポート',
       action: () => setShowExportDialog(true),
@@ -581,15 +618,33 @@ export default function FlowCanvas({
     if (isEmptyCanvas) {
       const multiSelect = event.ctrlKey || event.metaKey;
       
-      // Clear selection if not multi-selecting
-      if (!multiSelect) {
-        clearSelection();
+      if (cursorMode === 'hand') {
+        // Hand tool: Clear selection and start panning
+        if (!multiSelect) {
+          clearSelection();
+        }
+        
+        setIsPanning(true);
+        setPanStart({ x: event.clientX, y: event.clientY });
+        setInitialTransform({ x: canvasState.transform.x, y: canvasState.transform.y });
+      } else if (cursorMode === 'selection') {
+        // Selection tool: Start box selection
+        if (!multiSelect) {
+          clearSelection();
+        }
+        
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          const screenX = event.clientX - rect.left;
+          const screenY = event.clientY - rect.top;
+          const canvasX = (screenX - canvasState.transform.x) / canvasState.transform.scale;
+          const canvasY = (screenY - canvasState.transform.y) / canvasState.transform.scale;
+          
+          setIsBoxSelecting(true);
+          setBoxSelectionStart({ x: canvasX, y: canvasY });
+          setBoxSelectionEnd({ x: canvasX, y: canvasY });
+        }
       }
-      
-      // Start panning on empty canvas
-      setIsPanning(true);
-      setPanStart({ x: event.clientX, y: event.clientY });
-      setInitialTransform({ x: canvasState.transform.x, y: canvasState.transform.y });
       
       // Prevent default to avoid text selection
       event.preventDefault();
@@ -597,7 +652,7 @@ export default function FlowCanvas({
     }
     
     canvasHandleMouseDown(event as any);
-  }, [clearSelection, canvasHandleMouseDown]);
+  }, [clearSelection, canvasHandleMouseDown, cursorMode, canvasState.transform]);
 
   const handleCanvasMouseMove = useCallback((event: React.MouseEvent) => {
     // Handle panning
@@ -618,6 +673,20 @@ export default function FlowCanvas({
         pan({ x: panDeltaX, y: panDeltaY });
       }
       
+      return;
+    }
+    
+    // Handle box selection
+    if (isBoxSelecting && boxSelectionStart) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const screenX = event.clientX - rect.left;
+        const screenY = event.clientY - rect.top;
+        const canvasX = (screenX - canvasState.transform.x) / canvasState.transform.scale;
+        const canvasY = (screenY - canvasState.transform.y) / canvasState.transform.scale;
+        
+        setBoxSelectionEnd({ x: canvasX, y: canvasY });
+      }
       return;
     }
     
@@ -663,12 +732,51 @@ export default function FlowCanvas({
     }
     
     canvasHandleMouseMove(event as any);
-  }, [isPanning, panStart, initialTransform, canvasState, connectionState.isConnecting, isSelecting, updateTempConnection, updateSelectionBox, isComponentDraggingFn, updateComponentDrag, canvasHandleMouseMove, pan]);
+  }, [isPanning, panStart, initialTransform, canvasState, connectionState.isConnecting, isSelecting, updateTempConnection, updateSelectionBox, isComponentDraggingFn, updateComponentDrag, canvasHandleMouseMove, pan, isBoxSelecting, boxSelectionStart]);
 
   const handleCanvasMouseUp = useCallback(() => {
     // End panning
     if (isPanning) {
       setIsPanning(false);
+      return;
+    }
+    
+    // End box selection
+    if (isBoxSelecting && boxSelectionStart && boxSelectionEnd) {
+      // Calculate selection rectangle
+      const minX = Math.min(boxSelectionStart.x, boxSelectionEnd.x);
+      const maxX = Math.max(boxSelectionStart.x, boxSelectionEnd.x);
+      const minY = Math.min(boxSelectionStart.y, boxSelectionEnd.y);
+      const maxY = Math.max(boxSelectionStart.y, boxSelectionEnd.y);
+      
+      // Find components within selection rectangle
+      const selectedComponentIds = components
+        .filter(component => {
+          const compLeft = component.position.x;
+          const compRight = component.position.x + component.size.width;
+          const compTop = component.position.y;
+          const compBottom = component.position.y + component.size.height;
+          
+          // Check if component overlaps with selection rectangle
+          return !(compRight < minX || compLeft > maxX || compBottom < minY || compTop > maxY);
+        })
+        .map(component => component.id);
+      
+      // Update selection using the selection hook
+      if (selectedComponentIds.length > 0) {
+        // Use a more direct approach to select multiple components
+        selectedComponentIds.forEach((componentId) => {
+          selectComponent(componentId, true); // Always use multiSelect = true
+        });
+      } else {
+        // Clear selection if no components were selected
+        clearSelection();
+      }
+      
+      // Reset box selection state
+      setIsBoxSelecting(false);
+      setBoxSelectionStart(null);
+      setBoxSelectionEnd(null);
       return;
     }
     
@@ -686,16 +794,28 @@ export default function FlowCanvas({
     // End component dragging if active
     if (isComponentDraggingFn()) {
       endComponentDrag();
+      
+      // Notify parent that drag has ended
+      onDragEnd?.();
     }
     
     canvasHandleMouseUp();
-  }, [isPanning, connectionState.isConnecting, isSelecting, components, endSelectionBox, isComponentDraggingFn, endComponentDrag, cancelConnection, canvasHandleMouseUp]);
+  }, [isPanning, connectionState.isConnecting, isSelecting, components, endSelectionBox, isComponentDraggingFn, endComponentDrag, cancelConnection, canvasHandleMouseUp, isBoxSelecting, boxSelectionStart, boxSelectionEnd, clearSelection, selectComponent, onDragEnd]);
 
   // Component event handlers
   const handleComponentUpdate = useCallback((id: string, updates: Partial<FlowComponentData>) => {
     const updatedComponents = components.map(component =>
       component.id === id ? { ...component, ...updates } : component
     );
+    onComponentsChange?.(updatedComponents);
+  }, [components, onComponentsChange]);
+
+  // Handle group resize updates
+  const handleGroupComponentsUpdate = useCallback((updates: { id: string; position: Point; size: { width: number; height: number } }[]) => {
+    const updatedComponents = components.map(component => {
+      const update = updates.find(u => u.id === component.id);
+      return update ? { ...component, position: update.position, size: update.size } : component;
+    });
     onComponentsChange?.(updatedComponents);
   }, [components, onComponentsChange]);
 
@@ -712,8 +832,11 @@ export default function FlowCanvas({
       canvasState.transform
     );
     
+    // Notify parent that drag is starting
+    onDragStart?.();
+    
     startComponentDrag(id, canvasPoint);
-  }, [startComponentDrag]);
+  }, [startComponentDrag, onDragStart, canvasState.transform]);
 
   const handleComponentDrag = useCallback((id: string, delta: Point) => {
     // Component dragging is now handled by the useComponentDrag hook
@@ -723,7 +846,10 @@ export default function FlowCanvas({
 
   const handleComponentEndDrag = useCallback((id: string) => {
     endComponentDrag();
-  }, [endComponentDrag]);
+    
+    // Notify parent that drag has ended
+    onDragEnd?.();
+  }, [endComponentDrag, onDragEnd]);
 
   const handleComponentDoubleClick = useCallback((id: string) => {
     setEditingComponentId(id);
@@ -939,7 +1065,9 @@ export default function FlowCanvas({
   const transformString = `translate(${canvasState.transform.x}, ${canvasState.transform.y}) scale(${canvasState.transform.scale})`;
 
   const canvasStyle: React.CSSProperties = {
-    cursor: isPanning ? 'grabbing' : 'grab',
+    cursor: cursorMode === 'hand' 
+      ? (isPanning ? 'grabbing' : 'grab')
+      : (isBoxSelecting ? 'crosshair' : 'default'),
     userSelect: 'none',
   };
 
@@ -1014,6 +1142,7 @@ export default function FlowCanvas({
                   key={component.id}
                   component={component}
                   allComponents={components}
+                  selectedComponentsCount={selectedIds.length}
                   isSelected={componentIsSelected}
                   isHovered={hoveredComponentId === component.id}
                   isDragging={isComponentDraggingFn(component.id)}
@@ -1038,8 +1167,29 @@ export default function FlowCanvas({
             {/* Selection box */}
             <SelectionBox selectionBox={selectionBox} />
             
+            {/* Box selection rectangle */}
+            {isBoxSelecting && boxSelectionStart && boxSelectionEnd && (
+              <rect
+                x={Math.min(boxSelectionStart.x, boxSelectionEnd.x)}
+                y={Math.min(boxSelectionStart.y, boxSelectionEnd.y)}
+                width={Math.abs(boxSelectionEnd.x - boxSelectionStart.x)}
+                height={Math.abs(boxSelectionEnd.y - boxSelectionStart.y)}
+                fill="rgba(59, 130, 246, 0.1)"
+                stroke="rgb(59, 130, 246)"
+                strokeWidth={1 / canvasState.transform.scale}
+                strokeDasharray={`${4 / canvasState.transform.scale} ${2 / canvasState.transform.scale}`}
+              />
+            )}
+            
             {/* Selection bounds */}
             <SelectionBounds bounds={getSelectionBounds(components)} />
+            
+            {/* Group resize handles for multiple selection */}
+            <GroupResizeHandles
+              selectedComponents={selectedComponents}
+              scale={canvasState.transform.scale}
+              onComponentsUpdate={handleGroupComponentsUpdate}
+            />
             
             {/* Custom children content */}
             {children}
@@ -1049,6 +1199,37 @@ export default function FlowCanvas({
 
       {/* Canvas Controls */}
       <div className="absolute top-4 right-4 flex flex-col space-y-2">
+        {/* Tool Selection */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-2 flex space-x-1">
+          <button
+            onClick={() => setCursorMode('hand')}
+            className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+              cursorMode === 'hand'
+                ? 'bg-blue-100 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+            title="手のツール (パン)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+            </svg>
+          </button>
+          
+          <button
+            onClick={() => setCursorMode('selection')}
+            className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+              cursorMode === 'selection'
+                ? 'bg-blue-100 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+            title="選択ツール (矩形選択)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+            </svg>
+          </button>
+        </div>
+
         {/* Export Button */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-2">
           <button

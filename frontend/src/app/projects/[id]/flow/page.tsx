@@ -41,7 +41,8 @@ export default function FlowPage({ params }: FlowPageProps) {
     lastOperation, 
     isUndoing, 
     performUndo, 
-    canUndo 
+    canUndo,
+    recordOperation 
   } = useUndo();
 
   // Load existing flow data on component mount
@@ -184,20 +185,7 @@ export default function FlowPage({ params }: FlowPageProps) {
     }
   }, [projectId]);
 
-  // Add keyboard shortcut for undo (Ctrl+Z / Cmd+Z)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (canUndo) {
-          performUndo().catch(console.error);
-        }
-      }
-    };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, performUndo]);
 
   const handleComponentDragStart = (component: DraggedComponent) => {
     setDraggedComponent(component);
@@ -718,7 +706,7 @@ export default function FlowPage({ params }: FlowPageProps) {
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
               </svg>
-              <span className="hidden lg:inline whitespace-nowrap">元に戻す</span>
+              <span className="hidden lg:inline whitespace-nowrap">元に戻す (Cmd+Z)</span>
             </>
           )}
         </button>
@@ -794,6 +782,7 @@ export default function FlowPage({ params }: FlowPageProps) {
             onRedo={() => {}} // TODO: Implement redo functionality
             canUndo={canUndo}
             canRedo={false} // TODO: Implement redo functionality
+            recordOperation={recordOperation}
             generatedFlowData={generatedFlowData}
             onFlowGenerated={(components, connections) => {
               // Clear generatedFlowData after it's been used to prevent re-execution

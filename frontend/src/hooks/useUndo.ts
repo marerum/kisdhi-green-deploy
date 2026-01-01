@@ -22,7 +22,9 @@ export function useUndo() {
   }, []);
 
   const performUndo = useCallback(async () => {
-    if (!lastOperation || isUndoing) return;
+    if (!lastOperation || isUndoing) {
+      return;
+    }
 
     setIsUndoing(true);
     try {

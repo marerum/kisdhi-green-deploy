@@ -18,6 +18,7 @@ export interface FlowComponentBaseProps {
   isDragging?: boolean;
   isEditing?: boolean;
   scale?: number;
+  showResizeHandles?: boolean;
   onUpdate?: (id: string, updates: Partial<FlowComponentData>) => void;
   onSelect?: (id: string, multiSelect?: boolean) => void;
   onStartDrag?: (id: string, startPoint: Point) => void;
@@ -52,6 +53,7 @@ export default function FlowComponentBase({
   isDragging = false,
   isEditing = false,
   scale = 1,
+  showResizeHandles = true,
   onUpdate,
   onSelect,
   onStartDrag,
@@ -335,7 +337,7 @@ export default function FlowComponentBase({
 
   // Render resize handles
   const renderResizeHandles = useCallback(() => {
-    if (!isSelected || isEditing) {
+    if (!isSelected || isEditing || !showResizeHandles) {
       return null;
     }
 
