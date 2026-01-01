@@ -35,6 +35,10 @@ export interface FlowComponentBaseProps {
 export interface FlowComponentState {
   dragStart: Point | null;
   lastPosition: Point;
+  isResizing: boolean;
+  resizeHandle: string | null;
+  initialSize: { width: number; height: number };
+  initialMousePos: Point;
 }
 
 /**
@@ -64,6 +68,10 @@ export default function FlowComponentBase({
   const [state, setState] = useState<FlowComponentState>({
     dragStart: null,
     lastPosition: data.position,
+    isResizing: false,
+    resizeHandle: null,
+    initialSize: data.size,
+    initialMousePos: { x: 0, y: 0 },
   });
 
   const [hoveredPointId, setHoveredPointId] = useState<string | null>(null);
@@ -75,10 +83,18 @@ export default function FlowComponentBase({
   }, [data.position]);
 
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    console.log('=== COMPONENT MOUSE DOWN ===');
+    console.log('Component ID:', data.id);
+    console.log('Event:', event);
+    console.log('isEditing:', isEditing);
+    
     event.stopPropagation();
     
     // Don't start drag if we're editing
-    if (isEditing) return;
+    if (isEditing) {
+      console.log('Ignoring mouse down - component is editing');
+      return;
+    }
     
     const rect = (event.currentTarget as SVGElement).getBoundingClientRect();
     const startPoint: Point = {
@@ -92,6 +108,7 @@ export default function FlowComponentBase({
       lastPosition: data.position,
     }));
 
+    console.log('Calling onSelect with:', data.id, event.ctrlKey || event.metaKey);
     onSelect?.(data.id, event.ctrlKey || event.metaKey);
     onStartDrag?.(data.id, startPoint);
   }, [data.id, data.position, isEditing, onSelect, onStartDrag]);
@@ -101,6 +118,112 @@ export default function FlowComponentBase({
     onStartEdit?.(data.id);
     onDoubleClick?.(data.id);
   }, [data.id, onStartEdit, onDoubleClick]);
+
+  // リサイズハンドルのマウスダウン
+  const handleResizeMouseDown = useCallback((event: React.MouseEvent, handle: string) => {
+    console.log('🔧 RESIZE HANDLE CLICKED:', handle);
+    console.log('Current state before update:', state);
+    
+    event.stopPropagation();
+    event.preventDefault();
+    
+    const newState = {
+      ...state,
+      isResizing: true,
+      resizeHandle: handle,
+      initialSize: data.size,
+      initialMousePos: { x: event.clientX, y: event.clientY },
+    };
+    
+    console.log('Setting new state:', newState);
+    setState(newState);
+
+    // グローバルマウスイベントリスナーを追加
+    const handleMouseMove = (e: MouseEvent) => {
+      handleResizeMouseMove(e, handle, newState); // 新しい状態を直接渡す
+    };
+
+    const handleMouseUp = () => {
+      console.log('🔧 RESIZE MOUSE UP');
+      handleResizeMouseUp();
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    
+    console.log('Added global event listeners for resize');
+  }, [data.size, data.id, state]);
+
+  // リサイズ中のマウス移動
+  const handleResizeMouseMove = useCallback((event: MouseEvent, handle: string, currentState?: FlowComponentState) => {
+    const resizeState = currentState || state;
+    
+    if (!resizeState.isResizing) {
+      return;
+    }
+
+    const deltaX = event.clientX - resizeState.initialMousePos.x;
+    const deltaY = event.clientY - resizeState.initialMousePos.y;
+    
+    let newSize = { ...resizeState.initialSize };
+    let newPosition = { ...data.position };
+
+    // ハンドルに応じてサイズと位置を計算
+    switch (handle) {
+      case 'nw': // 左上
+        newSize.width = Math.max(50, resizeState.initialSize.width - deltaX);
+        newSize.height = Math.max(30, resizeState.initialSize.height - deltaY);
+        newPosition.x = data.position.x + (resizeState.initialSize.width - newSize.width);
+        newPosition.y = data.position.y + (resizeState.initialSize.height - newSize.height);
+        break;
+      case 'ne': // 右上
+        newSize.width = Math.max(50, resizeState.initialSize.width + deltaX);
+        newSize.height = Math.max(30, resizeState.initialSize.height - deltaY);
+        newPosition.y = data.position.y + (resizeState.initialSize.height - newSize.height);
+        break;
+      case 'sw': // 左下
+        newSize.width = Math.max(50, resizeState.initialSize.width - deltaX);
+        newSize.height = Math.max(30, resizeState.initialSize.height + deltaY);
+        newPosition.x = data.position.x + (resizeState.initialSize.width - newSize.width);
+        break;
+      case 'se': // 右下
+        newSize.width = Math.max(50, resizeState.initialSize.width + deltaX);
+        newSize.height = Math.max(30, resizeState.initialSize.height + deltaY);
+        break;
+      case 'n': // 上
+        newSize.height = Math.max(30, resizeState.initialSize.height - deltaY);
+        newPosition.y = data.position.y + (resizeState.initialSize.height - newSize.height);
+        break;
+      case 's': // 下
+        newSize.height = Math.max(30, resizeState.initialSize.height + deltaY);
+        break;
+      case 'w': // 左
+        newSize.width = Math.max(50, resizeState.initialSize.width - deltaX);
+        newPosition.x = data.position.x + (resizeState.initialSize.width - newSize.width);
+        break;
+      case 'e': // 右
+        newSize.width = Math.max(50, resizeState.initialSize.width + deltaX);
+        break;
+    }
+
+    // サイズと位置を更新
+    onUpdate?.(data.id, { 
+      size: newSize,
+      position: newPosition
+    });
+  }, [state, data.position, data.id, onUpdate]);
+
+  // リサイズ終了
+  const handleResizeMouseUp = useCallback(() => {
+    console.log('🔧 RESIZE END');
+    setState(prev => ({
+      ...prev,
+      isResizing: false,
+      resizeHandle: null,
+    }));
+  }, []);
 
   const handleTextSave = useCallback((newText: string) => {
     onUpdate?.(data.id, { text: newText });
@@ -210,6 +333,56 @@ export default function FlowComponentBase({
     );
   }, [isSelected, data.position, data.size, data.style.borderRadius, scale]);
 
+  // Render resize handles
+  const renderResizeHandles = useCallback(() => {
+    if (!isSelected || isEditing) {
+      return null;
+    }
+
+    const handleSize = 12 / scale; // サイズを大きくして見やすくする
+    const handles = [
+      { id: 'nw', x: data.position.x - handleSize/2, y: data.position.y - handleSize/2, cursor: 'nw-resize' },
+      { id: 'ne', x: data.position.x + data.size.width - handleSize/2, y: data.position.y - handleSize/2, cursor: 'ne-resize' },
+      { id: 'sw', x: data.position.x - handleSize/2, y: data.position.y + data.size.height - handleSize/2, cursor: 'sw-resize' },
+      { id: 'se', x: data.position.x + data.size.width - handleSize/2, y: data.position.y + data.size.height - handleSize/2, cursor: 'se-resize' },
+      { id: 'n', x: data.position.x + data.size.width/2 - handleSize/2, y: data.position.y - handleSize/2, cursor: 'n-resize' },
+      { id: 's', x: data.position.x + data.size.width/2 - handleSize/2, y: data.position.y + data.size.height - handleSize/2, cursor: 's-resize' },
+      { id: 'w', x: data.position.x - handleSize/2, y: data.position.y + data.size.height/2 - handleSize/2, cursor: 'w-resize' },
+      { id: 'e', x: data.position.x + data.size.width - handleSize/2, y: data.position.y + data.size.height/2 - handleSize/2, cursor: 'e-resize' },
+    ];
+
+    return (
+      <g 
+        className="resize-handles" 
+        style={{ 
+          pointerEvents: 'all',
+          zIndex: 1000 
+        }}
+      >
+        {handles.map(handle => (
+          <rect
+            key={handle.id}
+            x={handle.x}
+            y={handle.y}
+            width={handleSize}
+            height={handleSize}
+            fill="#3b82f6"
+            stroke="#ffffff"
+            strokeWidth={2 / scale}
+            style={{ 
+              cursor: handle.cursor,
+              pointerEvents: 'all'
+            }}
+            onMouseDown={(e) => {
+              console.log('🔧 RESIZE HANDLE CLICKED:', handle.id);
+              handleResizeMouseDown(e, handle.id);
+            }}
+          />
+        ))}
+      </g>
+    );
+  }, [isSelected, isEditing, data.position, data.size, data.type, scale, handleResizeMouseDown]);
+
   // Render text editor
   const renderTextEditor = useCallback(() => {
     if (!isEditing) return null;
@@ -239,8 +412,13 @@ export default function FlowComponentBase({
       <g
         ref={componentRef}
         className={componentClasses}
-        onMouseDown={handleMouseDown}
+        onMouseDown={state.isResizing ? undefined : handleMouseDown} // リサイズ中は通常のドラッグを無効化
         onDoubleClick={handleDoubleClick}
+        onClick={(e) => {
+          console.log('=== COMPONENT CLICKED ===');
+          console.log('Component ID:', data.id);
+          console.log('Event:', e);
+        }}
         style={{
           transform: isDragging ? 'scale(1.02)' : 'scale(1)',
           transformOrigin: `${data.position.x + data.size.width / 2}px ${data.position.y + data.size.height / 2}px`,
@@ -255,6 +433,9 @@ export default function FlowComponentBase({
         {/* Connection points */}
         {renderConnectionPoints()}
       </g>
+      
+      {/* Resize handles - 別のグループとして最後にレンダリング（最前面に表示） */}
+      {renderResizeHandles()}
       
       {/* Text editor */}
       {renderTextEditor()}

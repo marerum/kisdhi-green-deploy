@@ -54,34 +54,17 @@ export default function CanvasTest({
 
   // Debug components state changes
   React.useEffect(() => {
-    console.log('=== CANVAS TEST: COMPONENTS STATE CHANGED ===');
-    console.log('Components count:', components.length);
-    console.log('Components:', components);
-    
-    if (components.length === 0) {
-      console.log('⚠️ Components array is empty');
-    } else {
-      console.log('✅ Components array has data');
-    }
+    // Silent monitoring - no logs
   }, [components]);
 
   // Handle generated flow data - SIMPLIFIED VERSION
   React.useEffect(() => {
-    console.log('=== CANVAS TEST: GENERATED FLOW DATA EFFECT ===');
-    console.log('generatedFlowData:', generatedFlowData);
-    console.log('projectId:', projectId);
-    
     // If new generatedFlowData is provided, use it immediately (prioritize over autosave)
     if (generatedFlowData) {
-      console.log('=== GENERATED FLOW DATA RECEIVED ===');
-      console.log('Components:', generatedFlowData.components?.length);
-      
       if (!generatedFlowData.components || generatedFlowData.components.length === 0) {
-        console.error('❌ Generated flow data has no components!');
         return;
       }
       
-      console.log('✅ Setting components and connections from generated data...');
       setComponents(generatedFlowData.components);
       setConnections(generatedFlowData.connections);
       setSelectedComponentIds([]);
@@ -89,10 +72,18 @@ export default function CanvasTest({
       
       // Notify parent that flow has been generated
       if (onFlowGenerated) {
-        console.log('Notifying parent that flow has been generated');
         onFlowGenerated(generatedFlowData.components, generatedFlowData.connections);
       }
+      
       return; // Skip autosave check when we have new generated data
+    }
+  }, [generatedFlowData, onFlowGenerated]);
+
+  // Separate effect for autosave loading - only runs once when projectId changes
+  React.useEffect(() => {
+    // Skip autosave loading if we already have generated data
+    if (generatedFlowData) {
+      return;
     }
     
     // Only check autosave if no new generatedFlowData is provided
@@ -100,14 +91,10 @@ export default function CanvasTest({
       if (projectId) {
         const key = `flow-autosave-${projectId}`;
         const saved = localStorage.getItem(key);
-        console.log('Checking autosave key:', key);
         
         if (saved) {
-          console.log('Loading autosaved flow from localStorage for project', projectId);
           const parsed = JSON.parse(saved);
           if (parsed?.components) {
-            console.log('Found autosaved components:', parsed.components.length);
-            
             setComponents(parsed.components);
             setConnections(parsed.connections || []);
             setSelectedComponentIds([]);
@@ -121,17 +108,7 @@ export default function CanvasTest({
     } catch (err) {
       console.error('Failed to load autosave:', err);
     }
-  }, [generatedFlowData, onFlowGenerated, projectId]);
-
-  const handleCanvasReady = (canvasRef: SVGSVGElement) => {
-    console.log('Canvas ready:', canvasRef);
-  };
-
-  const handleComponentsChange = useCallback((newComponents: FlowComponentData[]) => {
-    console.log('=== CANVAS TEST COMPONENTS CHANGE ===');
-    console.log('New components count:', newComponents.length);
-    setComponents(newComponents);
-  }, []);
+  }, [projectId]); // 依存配列からcomponents.lengthを削除
 
   // Auto-save components + connections to localStorage (debounced) using useAutoSave
   const saveKey = projectId ? `flow-autosave-${projectId}` : null;
@@ -143,7 +120,6 @@ export default function CanvasTest({
         timestamp: Date.now()
       };
       localStorage.setItem(saveKey, JSON.stringify(dataWithTimestamp));
-      console.log('Autosaved flow to localStorage:', saveKey);
     } catch (err) {
       console.error('Failed to autosave to localStorage:', err);
       throw err as Error;
@@ -152,7 +128,7 @@ export default function CanvasTest({
 
   const { save: autoSave, isLoading: isAutoSaving } = useAutoSave<{ components: FlowComponentData[]; connections: Connection[] }>({
     saveFunction,
-    delay: 1000,
+    delay: 100, // 遅延を1秒から100msに短縮
     onError: (e) => console.error('Autosave error', e),
   });
 
@@ -160,53 +136,34 @@ export default function CanvasTest({
   React.useEffect(() => {
     if (!saveKey) return;
     
-    // Only autosave if we have components (avoid saving empty state)
-    if (components.length > 0) {
-      console.log('=== AUTOSAVING ===');
-      console.log('Saving components:', components.length);
-      
-      autoSave({ 
-        components, 
-        connections
-      });
-    }
+    // Always autosave, even if components array is empty (to preserve empty state)
+    autoSave({ 
+      components, 
+      connections
+    });
   }, [components, connections, autoSave, saveKey]);
 
-  // Separate effect for autosave loading
-  React.useEffect(() => {
-    // Skip autosave loading if we already have generated data
-    if (generatedFlowData) {
-      console.log('Skipping autosave loading - generatedFlowData is present');
-      return;
-    }
+  const handleCanvasReady = (canvasRef: SVGSVGElement) => {
+    // Canvas ready - no logging needed
+  };
+
+  const handleComponentsChange = useCallback((newComponents: FlowComponentData[]) => {
+    setComponents(newComponents);
     
-    // Only check autosave if no new generatedFlowData is provided
-    try {
-      if (projectId) {
-        const key = `flow-autosave-${projectId}`;
-        const saved = localStorage.getItem(key);
-        console.log('Checking autosave key:', key);
-        
-        if (saved) {
-          console.log('Loading autosaved flow from localStorage for project', projectId);
-          const parsed = JSON.parse(saved);
-          if (parsed?.components) {
-            console.log('Found autosaved components:', parsed.components.length);
-            
-            setComponents(parsed.components);
-            setConnections(parsed.connections || []);
-            setSelectedComponentIds([]);
-            setSelectedConnectionIds([]);
-            
-            // Notify parent that flow has been loaded
-            if (onFlowGenerated) onFlowGenerated(parsed.components, parsed.connections || []);
-          }
-        }
+    // 即座に保存を実行（debounceをバイパス）
+    if (saveKey) {
+      const dataWithTimestamp = {
+        components: newComponents,
+        connections,
+        timestamp: Date.now()
+      };
+      try {
+        localStorage.setItem(saveKey, JSON.stringify(dataWithTimestamp));
+      } catch (err) {
+        console.error('❌ Failed to immediately save:', err);
       }
-    } catch (err) {
-      console.error('Failed to load autosave:', err);
     }
-  }, [projectId, onFlowGenerated, generatedFlowData]);
+  }, [components, connections, saveKey]);
 
   const handleConnectionsChange = useCallback((newConnections: Connection[]) => {
     setConnections(newConnections);

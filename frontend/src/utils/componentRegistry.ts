@@ -207,6 +207,10 @@ export class ComponentFactory {
     };
     
     console.log('Created component result:', result);
+    console.log('Component visible:', result.visible);
+    console.log('Component position:', result.position);
+    console.log('Component size:', result.size);
+    console.log('Component style:', result.style);
     return result;
   }
 
@@ -222,10 +226,10 @@ export class ComponentFactory {
     console.log('Type:', type);
     console.log('Position:', position);
     console.log('Overrides:', overrides);
-    console.log('Available templates:', COMPONENT_TEMPLATES);
+    console.log('Available templates:', COMPONENT_TEMPLATES.map(t => ({ type: t.type, name: t.name })));
     
     const template = COMPONENT_TEMPLATES.find(t => t.type === type);
-    console.log('Found template:', template);
+    console.log('Found template:', template ? { type: template.type, name: template.name } : null);
     
     if (!template) {
       console.error(`Unknown component type: ${type}`);

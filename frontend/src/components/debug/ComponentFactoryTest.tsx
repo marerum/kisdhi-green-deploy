@@ -10,7 +10,7 @@ export default function ComponentFactoryTest() {
     const results: string[] = [];
     
     // Test creating different component types
-    const testTypes = ['start', 'process', 'decision', 'end'] as const;
+    const testTypes = ['start', 'process', 'decision', 'end', 'actor', 'step'] as const;
     
     testTypes.forEach((type, index) => {
       try {

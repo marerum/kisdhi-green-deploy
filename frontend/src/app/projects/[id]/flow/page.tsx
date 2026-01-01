@@ -47,8 +47,7 @@ export default function FlowPage({ params }: FlowPageProps) {
 
   // Load existing flow data on component mount
   useEffect(() => {
-    console.log('=== FLOW PAGE: useEffect triggered ===');
-    console.log('Project ID:', projectId);
+    console.log('Loading flow data for project:', projectId);
     
     const loadExistingFlow = async () => {
       try {
@@ -60,20 +59,17 @@ export default function FlowPage({ params }: FlowPageProps) {
         const sessionData = sessionStorage.getItem(sessionKey);
         
         if (sessionData) {
-          console.log('=== FOUND FRESH GENERATED DATA IN SESSION ===');
+          console.log('Found fresh generated data in session storage');
           try {
             const parsedSessionData = JSON.parse(sessionData);
-            console.log('Session data:', parsedSessionData);
             
             // IMMEDIATELY clear the session data so it's only used once
             sessionStorage.removeItem(sessionKey);
             console.log('Cleared session data to prevent future conflicts');
             
             // Convert the flow nodes to canvas components using the same logic as button #3
-            const canvasComponents = convertNodesToCanvasComponents(
-              parsedSessionData.flow_nodes
-            );
-            const canvasConnections = generateConnectionsFromNodes(canvasComponents);
+            const canvasComponents = convertNodesToCanvasComponents(parsedSessionData);
+            const canvasConnections = generateConnectionsFromNodes(canvasComponents.filter(c => c.type === 'process'));
             
             if (canvasComponents.length === 0) {
               console.error('❌ Canvas components array is empty!');
@@ -132,7 +128,42 @@ export default function FlowPage({ params }: FlowPageProps) {
         
         if (existingNodes && existingNodes.length > 0) {
           // Convert existing nodes to canvas components (without actors/steps since they're not stored with existing nodes)
-          const canvasComponents = convertNodesToCanvasComponents(existingNodes);
+          // For existing flows, we'll use a simple linear layout
+          const canvasComponents = existingNodes.map((node: any, index: number) => {
+            const componentType = index === 0 ? 'start' : 
+                               index === existingNodes.length - 1 ? 'end' : 'process';
+            
+            const spacing = 350;
+            const startX = 100;
+            const startY = 100;
+            const position = { x: startX + (index * spacing), y: startY };
+            
+            return {
+              id: `existing-${componentType}-${index}`,
+              type: componentType,
+              position,
+              size: { width: 160, height: 80 },
+              text: node.text || `ステップ ${node.order + 1}`,
+              style: {
+                backgroundColor: '#4f46e5',
+                borderColor: '#3730a3',
+                textColor: '#ffffff',
+                borderWidth: 2,
+                borderRadius: 8,
+              },
+              connectionPoints: [
+                { id: `existing-${componentType}-${index}-top`, position: 'top', offset: 0.5, type: 'input' },
+                { id: `existing-${componentType}-${index}-right`, position: 'right', offset: 0.5, type: 'output' },
+                { id: `existing-${componentType}-${index}-bottom`, position: 'bottom', offset: 0.5, type: 'output' },
+                { id: `existing-${componentType}-${index}-left`, position: 'left', offset: 0.5, type: 'input' },
+              ],
+              zIndex: 0,
+              locked: false,
+              visible: true,
+              metadata: {},
+            };
+          });
+          
           const canvasConnections = generateConnectionsFromNodes(canvasComponents);
           
           if (canvasComponents.length === 0) {
@@ -148,15 +179,9 @@ export default function FlowPage({ params }: FlowPageProps) {
             timestamp: Date.now()
           });
           
-          console.log('✅ Generated flow data set successfully');
-          console.log('Loaded existing flow data:', { components: canvasComponents.length, connections: canvasConnections.length });
+          console.log('✅ Loaded existing flow data:', { components: canvasComponents.length, connections: canvasConnections.length });
         } else {
-          console.log('No existing nodes found');
-          // Auto-trigger generation for testing to restore functionality
-          console.log('Auto-triggering flow generation to restore data...');
-          setTimeout(() => {
-            handleGenerateFlow();
-          }, 1000);
+          console.log('No existing nodes found - ready for new flow generation');
         }
       } catch (err) {
         console.error('Failed to load existing flow:', err);
@@ -164,12 +189,6 @@ export default function FlowPage({ params }: FlowPageProps) {
         if (err instanceof Error && !err.message.includes('404')) {
           setError('既存のフローデータの読み込みに失敗しました');
         }
-        
-        // Auto-trigger flow generation to restore functionality
-        console.log('Auto-triggering flow generation after error to restore data...');
-        setTimeout(() => {
-          handleGenerateFlow();
-        }, 1000);
       } finally {
         setIsLoading(false);
       }
@@ -222,11 +241,11 @@ export default function FlowPage({ params }: FlowPageProps) {
       
       const flowResponse = await flowApi.generateFlow(projectId);
       
-      console.log('=== FLOW GENERATION RESPONSE ===');
-      console.log('Full response:', flowResponse);
-      console.log('Flow nodes:', flowResponse.flow_nodes);
-      console.log('Actors:', flowResponse.actors);
-      console.log('Steps:', flowResponse.steps);
+      console.log('Flow generation response:', {
+        actors: flowResponse.actors?.length || 0,
+        steps: flowResponse.steps?.length || 0,
+        flow_nodes: flowResponse.flow_nodes?.length || 0
+      });
       
       // Check if we have valid data
       if (!flowResponse.flow_nodes || flowResponse.flow_nodes.length === 0) {
@@ -235,12 +254,8 @@ export default function FlowPage({ params }: FlowPageProps) {
       }
       
       // Convert generated nodes to canvas components
-      const canvasComponents = convertNodesToCanvasComponents(flowResponse.flow_nodes);
-      const canvasConnections = generateConnectionsFromNodes(canvasComponents);
-      
-      console.log('=== CONVERTED COMPONENTS ===');
-      console.log('Canvas components:', canvasComponents);
-      console.log('Canvas connections:', canvasConnections);
+      const canvasComponents = convertNodesToCanvasComponents(flowResponse);
+      const canvasConnections = generateConnectionsFromNodes(canvasComponents.filter(c => c.type === 'process'));
       
       // Check if conversion was successful
       if (!canvasComponents || canvasComponents.length === 0) {
@@ -255,6 +270,17 @@ export default function FlowPage({ params }: FlowPageProps) {
         timestamp: Date.now()
       });
       
+      // Save to session storage for page transitions
+      const sessionKey = `flow-generated-${projectId}`;
+      const sessionData = {
+        actors: flowResponse.actors || [],
+        steps: flowResponse.steps || [],
+        flow_nodes: flowResponse.flow_nodes || [],
+        timestamp: Date.now()
+      };
+      sessionStorage.setItem(sessionKey, JSON.stringify(sessionData));
+      console.log('Saved complete flow data to session storage');
+      
       // Trigger refresh of Canvas component
       setRefreshKey(prev => prev + 1);
       setSuccessMessage(`${flowResponse.flow_nodes.length}ステップのフローを正常に生成しました`);
@@ -268,84 +294,275 @@ export default function FlowPage({ params }: FlowPageProps) {
     }
   };
 
-  // Convert legacy flow nodes to canvas components
-  const convertNodesToCanvasComponents = (nodes: any[]) => {
-    console.log('=== CONVERT NODES TO CANVAS COMPONENTS ===');
-    console.log('Input nodes:', nodes);
-    console.log('Nodes length:', nodes?.length);
-    console.log('Nodes type:', typeof nodes);
-    console.log('Is nodes array?', Array.isArray(nodes));
+  // Convert legacy flow nodes to canvas components with swimlane layout
+  const convertNodesToCanvasComponents = (flowResponse: any) => {
+    console.log('=== CONVERTING TO SWIMLANE LAYOUT ===');
     
-    // Test ComponentFactory directly
-    console.log('=== TESTING COMPONENT FACTORY ===');
-    try {
-      const testComponent = ComponentFactory.createByType('start', { x: 100, y: 100 }, { text: 'Test' });
-      console.log('ComponentFactory test result:', testComponent);
-      if (testComponent) {
-        console.log('✅ ComponentFactory is working');
-      } else {
-        console.log('❌ ComponentFactory returned null');
+    let { actors = [], steps = [], flow_nodes = [] } = flowResponse;
+    
+    if (!Array.isArray(flow_nodes) || flow_nodes.length === 0) {
+      console.error('No flow nodes found');
+      return [];
+    }
+    
+    // If actors or steps are missing/empty, extract them from flow_nodes
+    if (!Array.isArray(actors) || actors.length === 0) {
+      console.log('Extracting actors from flow_nodes...');
+      const uniqueActors = [...new Set(flow_nodes.map((node: any) => node.actor).filter(Boolean))];
+      actors = uniqueActors.map((actorName: string, index: number) => ({
+        name: actorName,
+        role: `役割${index + 1}`
+      }));
+    }
+    
+    if (!Array.isArray(steps) || steps.length === 0) {
+      console.log('Extracting steps from flow_nodes...');
+      const uniqueSteps = [...new Set(flow_nodes.map((node: any) => node.step).filter(Boolean))];
+      steps = uniqueSteps.map((stepName: string, index: number) => ({
+        name: stepName,
+        description: `ステップ${index + 1}の説明`
+      }));
+    }
+    
+    // スイムレーンのレイアウト設定（改良版）
+    const ACTOR_LANE_WIDTH = 180;  // 登場人物レーンの幅を拡大
+    const STEP_LANE_HEIGHT = 80;   // ステップレーンの高さを拡大
+    const CELL_WIDTH = 250;        // セル幅を拡大
+    const CELL_HEIGHT = 150;       // セル高さを拡大
+    const START_X = 200;           // 開始X位置
+    const START_Y = 100;           // 開始Y位置
+    const MARGIN = 20;             // マージン
+    
+    // 各セルの最大ノード数を事前に計算
+    const cellNodes: { [key: string]: any[] } = {};
+    
+    flow_nodes.forEach((node: any, nodeIndex: number) => {
+      const actorIndex = actors.findIndex((actor: any) => actor.name === node.actor);
+      const stepIndex = steps.findIndex((step: any) => step.name === node.step);
+      
+      if (actorIndex !== -1 && stepIndex !== -1) {
+        const cellKey = `${actorIndex}-${stepIndex}`;
+        if (!cellNodes[cellKey]) {
+          cellNodes[cellKey] = [];
+        }
+        cellNodes[cellKey].push({ ...node, nodeIndex });
       }
-    } catch (error) {
-      console.error('❌ ComponentFactory error:', error);
-    }
+    });
     
-    if (!nodes || !Array.isArray(nodes)) {
-      console.error('Nodes is not a valid array:', nodes);
-      return [];
-    }
+    const maxNodesInCell = Math.max(...Object.values(cellNodes).map(nodes => nodes.length), 1);
+    const DYNAMIC_CELL_HEIGHT = Math.max(CELL_HEIGHT, 100 + (maxNodesInCell - 1) * 110);
     
-    if (nodes.length === 0) {
-      console.warn('Nodes array is empty');
-      return [];
-    }
+    const components: any[] = [];
     
-    // TEMPORARY: Create simple test components instead of using ComponentFactory
-    console.log('=== CREATING SIMPLE TEST COMPONENTS ===');
-    const components = nodes.map((node, index) => {
-      const componentType = index === 0 ? 'start' : 
-                           index === nodes.length - 1 ? 'end' : 'process';
+    // 1. 登場人物（Actor）コンポーネントを縦に配置（動的サイズ）
+    actors.forEach((actor: any, actorIndex: number) => {
+      // このアクターの行にあるセルの最大ノード数を計算
+      let maxNodesInThisRow = 1;
+      steps.forEach((_: any, stepIndex: number) => {
+        const cellKey = `${actorIndex}-${stepIndex}`;
+        if (cellNodes[cellKey]) {
+          maxNodesInThisRow = Math.max(maxNodesInThisRow, cellNodes[cellKey].length);
+        }
+      });
       
-      const spacing = 350;
-      const startX = 100;
-      const startY = 100;
-      const position = { x: startX + (index * spacing), y: startY };
+      // アクターの高さをその行の最大ノード数に合わせて調整
+      const rowHeight = Math.max(CELL_HEIGHT, 100 + (maxNodesInThisRow - 1) * 110);
+      const actorHeight = Math.max(60, Math.min(rowHeight * 0.7, 120));
+      const textLength = (actor.name || `登場人物${actorIndex + 1}`).length;
+      const actorWidth = Math.max(120, Math.min(textLength * 12 + 40, ACTOR_LANE_WIDTH - 20));
       
-      // Create a simple component manually for testing
-      const simpleComponent: any = {
-        id: `test-${componentType}-${index}`,
-        type: componentType,
-        position,
-        size: { width: 160, height: 80 },
-        text: node.text || `ステップ ${node.order}`,
+      const actorComponent = {
+        id: `actor-${actorIndex}`,
+        type: 'actor',
+        position: { 
+          x: MARGIN, 
+          y: START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT) + (DYNAMIC_CELL_HEIGHT - actorHeight) / 2
+        },
+        size: { width: actorWidth, height: actorHeight },
+        text: actor.name || `登場人物${actorIndex + 1}`,
         style: {
-          backgroundColor: '#4f46e5',
-          borderColor: '#3730a3',
+          backgroundColor: '#8b5cf6',
+          borderColor: '#7c3aed',
           textColor: '#ffffff',
           borderWidth: 2,
-          borderRadius: 8,
+          borderRadius: 6,
         },
         connectionPoints: [
-          { id: `test-${componentType}-${index}-top`, position: 'top', offset: 0.5, type: 'input' },
-          { id: `test-${componentType}-${index}-right`, position: 'right', offset: 0.5, type: 'output' },
-          { id: `test-${componentType}-${index}-bottom`, position: 'bottom', offset: 0.5, type: 'output' },
-          { id: `test-${componentType}-${index}-left`, position: 'left', offset: 0.5, type: 'input' },
+          { id: `actor-${actorIndex}-right`, position: 'right', offset: 0.5, type: 'both' },
+          { id: `actor-${actorIndex}-left`, position: 'left', offset: 0.5, type: 'both' },
         ],
         zIndex: 0,
         locked: false,
         visible: true,
-        metadata: {},
+        metadata: { role: actor.role },
       };
-      
-      // Add actor and step metadata - REMOVED
-      
-      console.log(`Created simple component ${index}:`, simpleComponent);
-      return simpleComponent;
+      components.push(actorComponent);
     });
     
-    console.log('=== CONVERSION COMPLETE ===');
-    console.log('Generated components count:', components.length);
-    console.log('Generated components:', components);
+    // 2. ステップ（Step）コンポーネントを横に配置（動的サイズ）
+    steps.forEach((step: any, stepIndex: number) => {
+      // このステップの列にあるセルの最大ノード数を計算
+      let maxNodesInThisColumn = 1;
+      actors.forEach((_: any, actorIndex: number) => {
+        const cellKey = `${actorIndex}-${stepIndex}`;
+        if (cellNodes[cellKey]) {
+          maxNodesInThisColumn = Math.max(maxNodesInThisColumn, cellNodes[cellKey].length);
+        }
+      });
+      
+      const textLength = (step.name || `ステップ${stepIndex + 1}`).length;
+      const stepWidth = Math.max(180, Math.min(textLength * 12 + 40, CELL_WIDTH - 20));
+      const stepHeight = 60;
+      
+      const stepComponent = {
+        id: `step-${stepIndex}`,
+        type: 'step',
+        position: { 
+          x: START_X + (stepIndex * CELL_WIDTH) + (CELL_WIDTH - stepWidth) / 2, 
+          y: MARGIN 
+        },
+        size: { width: stepWidth, height: stepHeight },
+        text: step.name || `ステップ${stepIndex + 1}`,
+        style: {
+          backgroundColor: '#06b6d4',
+          borderColor: '#0891b2',
+          textColor: '#ffffff',
+          borderWidth: 2,
+          borderRadius: 6,
+        },
+        connectionPoints: [
+          { id: `step-${stepIndex}-bottom`, position: 'bottom', offset: 0.5, type: 'both' },
+          { id: `step-${stepIndex}-top`, position: 'top', offset: 0.5, type: 'both' },
+        ],
+        zIndex: 0,
+        locked: false,
+        visible: true,
+        metadata: { description: step.description },
+      };
+      components.push(stepComponent);
+    });
+    
+    // 3. フローノードをマトリックス形式で配置（完全に重ならないように）
+    // 各セルのノードを配置
+    Object.entries(cellNodes).forEach(([cellKey, nodesInCell]) => {
+      const [actorIndex, stepIndex] = cellKey.split('-').map(Number);
+      const cellX = START_X + (stepIndex * CELL_WIDTH);
+      const cellY = START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT);
+      
+      nodesInCell.forEach((node: any, indexInCell: number) => {
+        const nodeWidth = 200;
+        const nodeHeight = 85;
+        const nodeSpacing = 20; // ノード間のスペース
+        
+        let x, y;
+        
+        if (nodesInCell.length === 1) {
+          // セル内に1つだけの場合は中央配置
+          x = cellX + (CELL_WIDTH - nodeWidth) / 2;
+          y = cellY + (DYNAMIC_CELL_HEIGHT - nodeHeight) / 2;
+        } else {
+          // セル内に複数ある場合は縦に等間隔で配置
+          const totalNodesHeight = nodesInCell.length * nodeHeight + (nodesInCell.length - 1) * nodeSpacing;
+          const startY = cellY + (DYNAMIC_CELL_HEIGHT - totalNodesHeight) / 2;
+          
+          x = cellX + (CELL_WIDTH - nodeWidth) / 2;
+          y = startY + indexInCell * (nodeHeight + nodeSpacing);
+        }
+        
+        const flowComponent = {
+          id: `flow-node-${node.nodeIndex}`,
+          type: 'process',
+          position: { x, y },
+          size: { width: nodeWidth, height: nodeHeight },
+          text: node.text || `ステップ ${node.order + 1}`,
+          style: {
+            backgroundColor: '#4f46e5',
+            borderColor: '#3730a3',
+            textColor: '#ffffff',
+            borderWidth: 2,
+            borderRadius: 8,
+          },
+          connectionPoints: [
+            { id: `flow-node-${node.nodeIndex}-top`, position: 'top', offset: 0.5, type: 'input' },
+            { id: `flow-node-${node.nodeIndex}-right`, position: 'right', offset: 0.5, type: 'output' },
+            { id: `flow-node-${node.nodeIndex}-bottom`, position: 'bottom', offset: 0.5, type: 'output' },
+            { id: `flow-node-${node.nodeIndex}-left`, position: 'left', offset: 0.5, type: 'input' },
+          ],
+          zIndex: 1,
+          locked: false,
+          visible: true,
+          metadata: { 
+            actor: node.actor, 
+            step: node.step, 
+            order: node.order 
+          },
+        };
+        components.push(flowComponent);
+      });
+    });
+    
+    // 無効なactor/stepを持つノードを処理
+    flow_nodes.forEach((node: any, nodeIndex: number) => {
+      const actorIndex = actors.findIndex((actor: any) => actor.name === node.actor);
+      const stepIndex = steps.findIndex((step: any) => step.name === node.step);
+      
+      if (actorIndex === -1 || stepIndex === -1) {
+        console.warn(`Node ${nodeIndex} has invalid actor or step:`, { actor: node.actor, step: node.step });
+        // For nodes without valid actor/step mapping, place them in a simple linear layout
+        const x = START_X + (nodeIndex * 220);
+        const y = START_Y + STEP_LANE_HEIGHT + MARGIN + actors.length * DYNAMIC_CELL_HEIGHT + 60;
+        
+        const flowComponent = {
+          id: `flow-node-${nodeIndex}`,
+          type: 'process',
+          position: { x, y },
+          size: { width: 180, height: 90 },
+          text: node.text || `ステップ ${node.order + 1}`,
+          style: {
+            backgroundColor: '#4f46e5',
+            borderColor: '#3730a3',
+            textColor: '#ffffff',
+            borderWidth: 2,
+            borderRadius: 8,
+          },
+          connectionPoints: [
+            { id: `flow-node-${nodeIndex}-top`, position: 'top', offset: 0.5, type: 'input' },
+            { id: `flow-node-${nodeIndex}-right`, position: 'right', offset: 0.5, type: 'output' },
+            { id: `flow-node-${nodeIndex}-bottom`, position: 'bottom', offset: 0.5, type: 'output' },
+            { id: `flow-node-${nodeIndex}-left`, position: 'left', offset: 0.5, type: 'input' },
+          ],
+          zIndex: 1,
+          locked: false,
+          visible: true,
+          metadata: { 
+            actor: node.actor, 
+            step: node.step, 
+            order: node.order 
+          },
+        };
+        components.push(flowComponent);
+      }
+    });
+    
+    console.log(`✅ Generated ${components.length} components: ${actors.length} actors, ${steps.length} steps, ${flow_nodes.length} flow nodes`);
+    console.log(`Max nodes in cell: ${maxNodesInCell}, Dynamic cell height: ${DYNAMIC_CELL_HEIGHT}`);
+    
+    // デバッグ: 各コンポーネントの位置を出力
+    console.log('=== COMPONENT POSITIONS ===');
+    components.forEach(comp => {
+      console.log(`${comp.type} "${comp.text}": (${comp.position.x}, ${comp.position.y}) size: ${comp.size.width}x${comp.size.height}`);
+    });
+    
+    // デバッグ: セル内のノード数を出力
+    console.log('=== CELL NODE DISTRIBUTION ===');
+    Object.entries(cellNodes).forEach(([cellKey, nodesInCell]) => {
+      const [actorIdx, stepIdx] = cellKey.split('-').map(Number);
+      console.log(`Cell [${actors[actorIdx]?.name}, ${steps[stepIdx]?.name}]: ${nodesInCell.length} nodes`);
+      nodesInCell.forEach((node, idx) => {
+        console.log(`  - Node ${idx}: "${node.text}"`);
+      });
+    });
+    
     return components;
   };
 
@@ -528,8 +745,8 @@ export default function FlowPage({ params }: FlowPageProps) {
             canRedo={false} // TODO: Implement redo functionality
             generatedFlowData={generatedFlowData}
             onFlowGenerated={(components, connections) => {
-              console.log('Flow generated callback called with:', components.length, 'components');
-              // Don't clear generatedFlowData immediately - let it persist for rendering
+              // Clear generatedFlowData after it's been used to prevent re-execution
+              setGeneratedFlowData(null);
             }}
             draggedComponent={draggedComponent}
             onComponentDragEnd={handleComponentDragEnd}

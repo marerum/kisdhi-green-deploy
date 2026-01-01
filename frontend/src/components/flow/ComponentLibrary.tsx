@@ -17,7 +17,9 @@ import {
   StartIcon, 
   EndIcon, 
   ConnectorIcon,
-  CategoryIcon 
+  CategoryIcon,
+  ActorIcon,
+  StepIcon
 } from './ComponentIcons';
 
 // Component templates
@@ -63,6 +65,26 @@ export const COMPONENT_TEMPLATES: ComponentTemplate[] = [
     category: 'basic',
   },
   {
+    type: 'actor',
+    name: '登場人物',
+    description: 'スイムレーンの登場人物',
+    icon: ActorIcon,
+    defaultSize: DEFAULT_COMPONENT_SIZES.actor,
+    defaultStyle: DEFAULT_COMPONENT_STYLES.actor,
+    defaultConnectionPoints: DEFAULT_CONNECTION_POINTS.actor,
+    category: 'swimlane',
+  },
+  {
+    type: 'step',
+    name: 'ステップ',
+    description: 'スイムレーンのステップ',
+    icon: StepIcon,
+    defaultSize: DEFAULT_COMPONENT_SIZES.step,
+    defaultStyle: DEFAULT_COMPONENT_STYLES.step,
+    defaultConnectionPoints: DEFAULT_CONNECTION_POINTS.step,
+    category: 'swimlane',
+  },
+  {
     type: 'connector',
     name: '矢印',
     description: 'コンポーネント間の接続',
@@ -82,6 +104,14 @@ export const COMPONENT_CATEGORIES: ComponentLibraryCategory[] = [
     description: 'フロー図の基本的な要素',
     icon: CategoryIcon,
     templates: COMPONENT_TEMPLATES.filter(t => t.category === 'basic'),
+    collapsed: false,
+  },
+  {
+    id: 'swimlane',
+    name: 'スイムレーン',
+    description: 'スイムレーン用の要素',
+    icon: ActorIcon,
+    templates: COMPONENT_TEMPLATES.filter(t => t.category === 'swimlane'),
     collapsed: false,
   },
   {

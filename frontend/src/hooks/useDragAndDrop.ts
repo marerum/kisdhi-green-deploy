@@ -109,13 +109,24 @@ export function useDragAndDrop(options: UseDragAndDropOptions = {}) {
       };
       
       console.log('Final drop position:', dropPosition);
-      console.log('Calling onDrop callback');
-      options.onDrop?.(draggedComponent.template, dropPosition);
+      console.log('About to call onDrop callback...');
+      console.log('onDrop function exists:', !!options.onDrop);
+      
+      if (options.onDrop) {
+        console.log('Calling onDrop with template and position...');
+        options.onDrop(draggedComponent.template, dropPosition);
+        console.log('onDrop callback completed');
+      } else {
+        console.warn('No onDrop callback provided');
+      }
     } catch (error) {
       console.error('Failed to handle drop:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     }
     
+    console.log('Calling endDrag...');
     endDrag();
+    console.log('handleDrop completed');
   }, [options, endDrag]);
 
   const handleDragOver = useCallback((event: React.DragEvent) => {

@@ -158,6 +158,16 @@ export default function ComponentSidebar({
 }: ComponentSidebarProps) {
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
+  // Debug: Log available categories and templates
+  console.log('=== COMPONENT SIDEBAR DEBUG ===');
+  console.log('Available categories:', COMPONENT_CATEGORIES.length);
+  COMPONENT_CATEGORIES.forEach(category => {
+    console.log(`Category ${category.id}:`, category.templates.length, 'templates');
+    category.templates.forEach(template => {
+      console.log(`  - ${template.type}: ${template.name}`);
+    });
+  });
+
   const { startDrag, dragState } = useDragAndDrop({
     onDragStart: (template, offset) => {
       console.log('Drag started:', template.name, 'offset:', offset);

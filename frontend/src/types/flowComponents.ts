@@ -4,7 +4,7 @@
 
 import { Point } from './canvas';
 
-export type FlowComponentType = 'process' | 'decision' | 'start' | 'end' | 'connector';
+export type FlowComponentType = 'process' | 'decision' | 'start' | 'end' | 'connector' | 'actor' | 'step';
 
 export interface FlowComponentStyle {
   backgroundColor: string;
@@ -58,7 +58,7 @@ export interface ComponentTemplate {
   defaultSize: { width: number; height: number };
   defaultStyle: FlowComponentStyle;
   defaultConnectionPoints: Omit<ConnectionPoint, 'id'>[];
-  category: 'basic' | 'advanced' | 'connectors';
+  category: 'basic' | 'advanced' | 'connectors' | 'swimlane';
 }
 
 export interface DraggedComponent {
@@ -112,6 +112,20 @@ export const DEFAULT_COMPONENT_STYLES: Record<FlowComponentType, FlowComponentSt
     borderWidth: 2,
     borderRadius: 0,
   },
+  actor: {
+    backgroundColor: '#8b5cf6',
+    borderColor: '#7c3aed',
+    textColor: '#ffffff',
+    borderWidth: 2,
+    borderRadius: 4,
+  },
+  step: {
+    backgroundColor: '#06b6d4',
+    borderColor: '#0891b2',
+    textColor: '#ffffff',
+    borderWidth: 2,
+    borderRadius: 4,
+  },
 };
 
 // Default sizes for different component types
@@ -121,6 +135,8 @@ export const DEFAULT_COMPONENT_SIZES: Record<FlowComponentType, { width: number;
   start: { width: 80, height: 80 },
   end: { width: 80, height: 80 },
   connector: { width: 100, height: 20 },
+  actor: { width: 120, height: 40 },
+  step: { width: 120, height: 40 },
 };
 
 // Default connection points for different component types
@@ -148,5 +164,13 @@ export const DEFAULT_CONNECTION_POINTS: Record<FlowComponentType, Omit<Connectio
   connector: [
     { position: 'left', offset: 0.5, type: 'input' },
     { position: 'right', offset: 0.5, type: 'output' },
+  ],
+  actor: [
+    { position: 'right', offset: 0.5, type: 'both' },
+    { position: 'left', offset: 0.5, type: 'both' },
+  ],
+  step: [
+    { position: 'bottom', offset: 0.5, type: 'both' },
+    { position: 'top', offset: 0.5, type: 'both' },
   ],
 };

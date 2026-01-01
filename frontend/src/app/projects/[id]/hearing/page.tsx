@@ -140,10 +140,12 @@ export default function HearingPage({ params }: HearingPageProps) {
       
       // Check if we have valid data
       if (flowResponse && flowResponse.flow_nodes && flowResponse.flow_nodes.length > 0) {
-        // Store the generated data in sessionStorage to pass to the flow page
+        // Store the complete generated data in sessionStorage to pass to the flow page
         const flowData = {
           components: null, // Will be converted in the flow page
           connections: null, // Will be converted in the flow page
+          actors: flowResponse.actors || [],
+          steps: flowResponse.steps || [],
           flow_nodes: flowResponse.flow_nodes,
           timestamp: Date.now() // To ensure fresh data
         };

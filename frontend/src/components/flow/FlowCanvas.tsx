@@ -201,6 +201,13 @@ export default function FlowCanvas({
     }
   }, [onCanvasReady]);
 
+  // Monitor components prop changes
+  useEffect(() => {
+    console.log('=== FLOW CANVAS: COMPONENTS PROP CHANGED ===');
+    console.log('Components count:', components.length);
+    console.log('Components:', components.map(c => ({ id: c.id, type: c.type, position: c.position })));
+  }, [components]);
+
   // Expose fitToContent function to parent
   useEffect(() => {
     if (onFitToContent) {
@@ -706,8 +713,15 @@ export default function FlowCanvas({
   }, [components, onComponentsChange]);
 
   const handleComponentSelect = useCallback((id: string, multiSelect = false) => {
+    console.log('=== HANDLE COMPONENT SELECT ===');
+    console.log('Component ID:', id);
+    console.log('Multi select:', multiSelect);
+    console.log('Current selectedIds:', selectedIds);
+    
     selectComponent(id, multiSelect);
-  }, [selectComponent]);
+    
+    console.log('Called selectComponent');
+  }, [selectComponent, selectedIds]);
 
   const handleComponentStartDrag = useCallback((id: string, startPoint: Point) => {
     if (!containerRef.current) return;
@@ -787,194 +801,161 @@ export default function FlowCanvas({
       console.log('Template:', template);
       console.log('Position:', position);
       
-      // Apply grid snapping if enabled
-      let dropPosition = position;
-      if (canvasState.grid.snapEnabled) {
-        dropPosition = snapToGrid(position, canvasState.grid.size);
-        console.log('Snapped position:', dropPosition);
-      }
-      
-      // Create new component (treat connector the same as other templates)
-      console.log('Creating component from template...');
-
-      // If connector, attempt to snap endpoints to nearby connection points
-      let createPosition = dropPosition;
-      let createSize = template.defaultSize;
-
-      if (template.type === 'connector') {
-        try {
-          const SNAP_DISTANCE = 24; // pixels
-          const midY = dropPosition.y + (template.defaultSize.height / 2);
-          const leftX = dropPosition.x;
-          const rightX = dropPosition.x + template.defaultSize.width;
-
-          // Build list of all connection points from existing components
-          const allPoints: { componentId: string; pointId: string; x: number; y: number }[] = [];
-          components.forEach((c) => {
-            (c.connectionPoints || []).forEach((cp: any) => {
-              let px = c.position.x;
-              let py = c.position.y;
-              const offset = typeof cp.offset === 'number' ? cp.offset : 0.5;
-              switch (cp.position) {
-                case 'top':
-                  px = c.position.x + c.size.width * offset;
-                  py = c.position.y;
-                  break;
-                case 'right':
-                  px = c.position.x + c.size.width;
-                  py = c.position.y + c.size.height * offset;
-                  break;
-                case 'bottom':
-                  px = c.position.x + c.size.width * offset;
-                  py = c.position.y + c.size.height;
-                  break;
-                case 'left':
-                default:
-                  px = c.position.x;
-                  py = c.position.y + c.size.height * offset;
-                  break;
-              }
-              allPoints.push({ componentId: c.id, pointId: cp.id, x: px, y: py });
-            });
-          });
-
-          // Helper to find nearest point to a given coordinate
-          const findNearest = (x: number, y: number) => {
-            let best = null as null | { componentId: string; pointId: string; x: number; y: number; dist: number };
-            allPoints.forEach((p) => {
-              const dx = p.x - x;
-              const dy = p.y - y;
-              const d = Math.sqrt(dx * dx + dy * dy);
-              if (best === null || d < best.dist) {
-                best = { ...p, dist: d } as any;
-              }
-            });
-            return best;
-          };
-
-          const nearestLeft = findNearest(leftX, midY);
-          const nearestRight = findNearest(rightX, midY);
-
-          const leftSnap = nearestLeft && nearestLeft.dist <= SNAP_DISTANCE ? nearestLeft : null;
-          const rightSnap = nearestRight && nearestRight.dist <= SNAP_DISTANCE ? nearestRight : null;
-
-          if (leftSnap && rightSnap && leftSnap.componentId !== rightSnap.componentId) {
-            // Snap both endpoints: set position.x to left.x, width to span between points
-            const newWidth = Math.max(40, Math.abs(rightSnap.x - leftSnap.x));
-            const newY = (leftSnap.y + rightSnap.y) / 2 - (template.defaultSize.height / 2);
-            createPosition = { x: Math.min(leftSnap.x, rightSnap.x), y: newY };
-            createSize = { width: newWidth, height: template.defaultSize.height };
-            console.log('Connector snapped both endpoints to', leftSnap, rightSnap);
-          } else if (leftSnap) {
-            // Snap left endpoint
-            createPosition = { x: leftSnap.x, y: leftSnap.y - (template.defaultSize.height / 2) };
-            console.log('Connector snapped left endpoint to', leftSnap);
-          } else if (rightSnap) {
-            // Snap right endpoint
-            createPosition = { x: rightSnap.x - template.defaultSize.width, y: rightSnap.y - (template.defaultSize.height / 2) };
-            console.log('Connector snapped right endpoint to', rightSnap);
-          }
-        } catch (err) {
-          console.error('Failed to compute connector snap:', err);
-        }
-      }
-
-      const newComponent = ComponentFactory.createFromTemplate(template, createPosition, { size: createSize });
-      
-      if (newComponent) {
-        console.log('Created component:', newComponent);
-        const updatedComponents = [...components, newComponent];
-        console.log('Updated components array length:', updatedComponents.length);
-        console.log('Calling onComponentsChange with:', updatedComponents);
-        onComponentsChange?.(updatedComponents);
-        console.log('onComponentsChange called');
-        
-        // Use setTimeout to avoid setState during render
-        setTimeout(() => {
-          onSelectionChange?.([newComponent.id]);
-        }, 0);
-        
-        console.log('Component added successfully');
-      } else {
-        console.error('Failed to create component from template');
-      }
-      
-      // If the created component is a connector and it snapped to component points,
-      // try to create logical Connection entries linking the snapped points.
       try {
-        if (template.type === 'connector' && newComponent) {
-          // Recompute endpoints similar to connectionUtils.getConnectionPointPosition logic
-          const leftX = createPosition.x;
-          const rightX = createPosition.x + createSize.width;
-          const midY = createPosition.y + createSize.height / 2;
+        // Apply grid snapping if enabled
+        let dropPosition = position;
+        if (canvasState.grid.snapEnabled) {
+          dropPosition = snapToGrid(position, canvasState.grid.size);
+          console.log('Snapped position:', dropPosition);
+        }
+        
+        // Ensure components are not placed outside visible area
+        dropPosition = {
+          x: Math.max(0, dropPosition.x),
+          y: Math.max(0, dropPosition.y)
+        };
+        console.log('Adjusted position (min bounds):', dropPosition);
+        
+        // Create new component (treat connector the same as other templates)
+        console.log('Creating component from template...');
+        console.log('Template details:', {
+          type: template.type,
+          name: template.name,
+          category: template.category,
+          defaultSize: template.defaultSize,
+          defaultStyle: template.defaultStyle
+        });
 
-          // Build list of all connection points
-          const allPoints: { componentId: string; pointId: string; x: number; y: number }[] = [];
-          components.forEach((c) => {
-            (c.connectionPoints || []).forEach((cp: any) => {
-              let px = c.position.x;
-              let py = c.position.y;
-              const offset = typeof cp.offset === 'number' ? cp.offset : 0.5;
-              switch (cp.position) {
-                case 'top':
-                  px = c.position.x + c.size.width * offset;
-                  py = c.position.y;
-                  break;
-                case 'right':
-                  px = c.position.x + c.size.width;
-                  py = c.position.y + c.size.height * offset;
-                  break;
-                case 'bottom':
-                  px = c.position.x + c.size.width * offset;
-                  py = c.position.y + c.size.height;
-                  break;
-                case 'left':
-                default:
-                  px = c.position.x;
-                  py = c.position.y + c.size.height * offset;
-                  break;
-              }
-              allPoints.push({ componentId: c.id, pointId: cp.id, x: px, y: py });
+        // If connector, attempt to snap endpoints to nearby connection points
+        let createPosition = dropPosition;
+        let createSize = template.defaultSize;
+
+        if (template.type === 'connector') {
+          console.log('Processing connector component...');
+          try {
+            const SNAP_DISTANCE = 24; // pixels
+            const midY = dropPosition.y + (template.defaultSize.height / 2);
+            const leftX = dropPosition.x;
+            const rightX = dropPosition.x + template.defaultSize.width;
+
+            // Build list of all connection points from existing components
+            const allPoints: { componentId: string; pointId: string; x: number; y: number }[] = [];
+            components.forEach((c) => {
+              (c.connectionPoints || []).forEach((cp: any) => {
+                let px = c.position.x;
+                let py = c.position.y;
+                const offset = typeof cp.offset === 'number' ? cp.offset : 0.5;
+                switch (cp.position) {
+                  case 'top':
+                    px = c.position.x + c.size.width * offset;
+                    py = c.position.y;
+                    break;
+                  case 'right':
+                    px = c.position.x + c.size.width;
+                    py = c.position.y + c.size.height * offset;
+                    break;
+                  case 'bottom':
+                    px = c.position.x + c.size.width * offset;
+                    py = c.position.y + c.size.height;
+                    break;
+                  case 'left':
+                  default:
+                    px = c.position.x;
+                    py = c.position.y + c.size.height * offset;
+                    break;
+                }
+                allPoints.push({ componentId: c.id, pointId: cp.id, x: px, y: py });
+              });
             });
-          });
 
-          const SNAP_DISTANCE = 24;
-          const findNearest = (x: number, y: number) => {
-            let best = null as null | { componentId: string; pointId: string; x: number; y: number; dist: number };
-            allPoints.forEach((p) => {
-              const dx = p.x - x;
-              const dy = p.y - y;
-              const d = Math.sqrt(dx * dx + dy * dy);
-              if (best === null || d < best.dist) {
-                best = { ...p, dist: d } as any;
-              }
-            });
-            return best;
-          };
+            // Helper to find nearest point to a given coordinate
+            const findNearest = (x: number, y: number) => {
+              let best = null as null | { componentId: string; pointId: string; x: number; y: number; dist: number };
+              allPoints.forEach((p) => {
+                const dx = p.x - x;
+                const dy = p.y - y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (best === null || d < best.dist) {
+                  best = { ...p, dist: d } as any;
+                }
+              });
+              return best;
+            };
 
-          const nearestLeft = findNearest(leftX, midY);
-          const nearestRight = findNearest(rightX, midY);
+            const nearestLeft = findNearest(leftX, midY);
+            const nearestRight = findNearest(rightX, midY);
 
-          const leftSnap = nearestLeft && nearestLeft.dist <= SNAP_DISTANCE ? nearestLeft : null;
-          const rightSnap = nearestRight && nearestRight.dist <= SNAP_DISTANCE ? nearestRight : null;
+            const leftSnap = nearestLeft && nearestLeft.dist <= SNAP_DISTANCE ? nearestLeft : null;
+            const rightSnap = nearestRight && nearestRight.dist <= SNAP_DISTANCE ? nearestRight : null;
 
-          // If snapped to two different components, create a connection between them
-          if (leftSnap && rightSnap && leftSnap.componentId !== rightSnap.componentId) {
-            // Create connection from left -> right
-            if (!connectionExists(leftSnap.componentId, leftSnap.pointId, rightSnap.componentId, rightSnap.pointId, connections)) {
-              const conn = createConnection(leftSnap.componentId, leftSnap.pointId, rightSnap.componentId, rightSnap.pointId);
-              const updatedConn = updateConnectionPath(conn, [...components, newComponent]);
-              onConnectionsChange?.([...(connections || []), updatedConn]);
+            if (leftSnap && rightSnap && leftSnap.componentId !== rightSnap.componentId) {
+              // Snap both endpoints: set position.x to left.x, width to span between points
+              const newWidth = Math.max(40, Math.abs(rightSnap.x - leftSnap.x));
+              const newY = (leftSnap.y + rightSnap.y) / 2 - (template.defaultSize.height / 2);
+              createPosition = { x: Math.min(leftSnap.x, rightSnap.x), y: newY };
+              createSize = { width: newWidth, height: template.defaultSize.height };
+              console.log('Connector snapped both endpoints to', leftSnap, rightSnap);
+            } else if (leftSnap) {
+              // Snap left endpoint
+              createPosition = { x: leftSnap.x, y: leftSnap.y - (template.defaultSize.height / 2) };
+              console.log('Connector snapped left endpoint to', leftSnap);
+            } else if (rightSnap) {
+              // Snap right endpoint
+              createPosition = { x: rightSnap.x - template.defaultSize.width, y: rightSnap.y - (template.defaultSize.height / 2) };
+              console.log('Connector snapped right endpoint to', rightSnap);
             }
-          } else if (leftSnap) {
-            // If snapped only on left, try to find a component on the right side of connector (by proximity)
-            // We'll not auto-create a single-ended connection; leave as visual connector component
-          } else if (rightSnap) {
-            // same as above for right-only
+          } catch (err) {
+            console.error('Failed to compute connector snap:', err);
           }
         }
-      } catch (err) {
-        console.error('Failed to auto-create connection for dropped connector:', err);
+
+        console.log('About to call ComponentFactory.createFromTemplate...');
+        console.log('Create position:', createPosition);
+        console.log('Create size:', createSize);
+        
+        const newComponent = ComponentFactory.createFromTemplate(template, createPosition, { size: createSize });
+        
+        console.log('=== COMPONENT CREATION RESULT ===');
+        console.log('Template type:', template.type);
+        console.log('Template name:', template.name);
+        console.log('Created component:', newComponent);
+        
+        if (newComponent) {
+          console.log('Created component details:', {
+            id: newComponent.id,
+            type: newComponent.type,
+            text: newComponent.text,
+            position: newComponent.position,
+            size: newComponent.size
+          });
+          const updatedComponents = [...components, newComponent];
+          console.log('Updated components array length:', updatedComponents.length);
+          console.log('Calling onComponentsChange with:', updatedComponents);
+          onComponentsChange?.(updatedComponents);
+          console.log('onComponentsChange called');
+          
+          // Use setTimeout to avoid setState during render
+          setTimeout(() => {
+            onSelectionChange?.([newComponent.id]);
+          }, 0);
+          
+          console.log('Component added successfully');
+        } else {
+          console.error('Failed to create component from template');
+          console.error('Template details:', {
+            type: template.type,
+            name: template.name,
+            defaultSize: template.defaultSize,
+            defaultStyle: template.defaultStyle
+          });
+        }
+        
+      } catch (error) {
+        console.error('=== ERROR IN FLOW CANVAS ON DROP ===');
+        console.error('Error:', error);
+        console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
+        console.error('Template:', template);
+        console.error('Position:', position);
       }
     },
   });
@@ -1040,8 +1021,6 @@ export default function FlowCanvas({
   
   // Transform string for the main content group - use actual canvas transform
   const transformString = `translate(${canvasState.transform.x}, ${canvasState.transform.y}) scale(${canvasState.transform.scale})`;
-
-  console.log('Canvas render - Transform:', canvasState.transform, 'ViewBox:', viewBox);
 
   const canvasStyle: React.CSSProperties = {
     cursor: isPanning ? 'grabbing' : 'grab',
@@ -1111,30 +1090,34 @@ export default function FlowCanvas({
             />
 
             {/* Render flow components */}
-            {components.map((component) => (
-              <FlowComponentRenderer
-                key={component.id}
-                component={component}
-                allComponents={components}
-                isSelected={isSelected(component.id)}
-                isHovered={hoveredComponentId === component.id}
-                isDragging={isComponentDraggingFn(component.id)}
-                isEditing={editingComponentId === component.id}
-                connectingFromPointId={connectionState.isConnecting ? `${connectionState.fromComponentId}:${connectionState.fromPointId}` : null}
-                scale={canvasState.transform.scale}
-                onUpdate={handleComponentUpdate}
-                onSelect={handleComponentSelect}
-                onStartDrag={handleComponentStartDrag}
-                onDrag={handleComponentDrag}
-                onEndDrag={handleComponentEndDrag}
-                onDoubleClick={handleComponentDoubleClick}
-                onStartEdit={handleComponentStartEdit}
-                onEndEdit={handleComponentEndEdit}
-                onConnectionPointHover={handleConnectionPointHover}
-                onConnectionStart={handleConnectionStart}
-                onConnectionEnd={handleConnectionEnd}
-              />
-            ))}
+            {components.map((component) => {
+              const componentIsSelected = isSelected(component.id);
+              
+              return (
+                <FlowComponentRenderer
+                  key={component.id}
+                  component={component}
+                  allComponents={components}
+                  isSelected={componentIsSelected}
+                  isHovered={hoveredComponentId === component.id}
+                  isDragging={isComponentDraggingFn(component.id)}
+                  isEditing={editingComponentId === component.id}
+                  connectingFromPointId={connectionState.isConnecting ? `${connectionState.fromComponentId}:${connectionState.fromPointId}` : null}
+                  scale={canvasState.transform.scale}
+                  onUpdate={handleComponentUpdate}
+                  onSelect={handleComponentSelect}
+                  onStartDrag={handleComponentStartDrag}
+                  onDrag={handleComponentDrag}
+                  onEndDrag={handleComponentEndDrag}
+                  onDoubleClick={handleComponentDoubleClick}
+                  onStartEdit={handleComponentStartEdit}
+                  onEndEdit={handleComponentEndEdit}
+                  onConnectionPointHover={handleConnectionPointHover}
+                  onConnectionStart={handleConnectionStart}
+                  onConnectionEnd={handleConnectionEnd}
+                />
+              );
+            })}
             
             {/* Selection box */}
             <SelectionBox selectionBox={selectionBox} />
