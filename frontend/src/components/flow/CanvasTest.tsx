@@ -9,7 +9,6 @@ import React, { useState, useCallback } from 'react';
 import FlowCanvas from './FlowCanvas';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { FlowComponentData, Connection, DraggedComponent } from '@/types/flowComponents';
-import { ComponentFactory } from '@/utils/componentRegistry';
 
 export interface CanvasTestProps {
   showPropertiesPanel?: boolean;
@@ -26,7 +25,6 @@ export interface CanvasTestProps {
     connections: Connection[];
     timestamp?: number;
   } | null;
-  onFitToContent?: (fn: (components?: FlowComponentData[] | null) => void) => void;
   draggedComponent?: DraggedComponent | null;
   onComponentDragEnd?: () => void;
 }
@@ -42,15 +40,11 @@ export default function CanvasTest({
   onFlowGenerated,
   generatedFlowData,
   projectId = null,
-  onFitToContent,
-  draggedComponent,
-  onComponentDragEnd,
 }: CanvasTestProps) {
   const [components, setComponents] = useState<FlowComponentData[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
-  const [fitToContentFn, setFitToContentFn] = useState<((components: FlowComponentData[]) => void) | null>(null);
 
   // Debug components state changes
   React.useEffect(() => {
@@ -126,7 +120,7 @@ export default function CanvasTest({
     }
   };
 
-  const { save: autoSave, isLoading: isAutoSaving } = useAutoSave<{ components: FlowComponentData[]; connections: Connection[] }>({
+  const { save: autoSave } = useAutoSave<{ components: FlowComponentData[]; connections: Connection[] }>({
     saveFunction,
     delay: 100, // 遅延を1秒から100msに短縮
     onError: (e) => console.error('Autosave error', e),
@@ -143,7 +137,7 @@ export default function CanvasTest({
     });
   }, [components, connections, autoSave, saveKey]);
 
-  const handleCanvasReady = (canvasRef: SVGSVGElement) => {
+  const handleCanvasReady = () => {
     // Canvas ready - no logging needed
   };
 
@@ -177,135 +171,24 @@ export default function CanvasTest({
     setSelectedConnectionIds(selectedIds);
   }, []);
 
-  // Add some test components
-  const addTestComponents = useCallback(() => {
-    const testComponents: FlowComponentData[] = [
-      ComponentFactory.createByType('start', { x: 100, y: 100 }, { text: '開始' })!,
-      ComponentFactory.createByType('process', { x: 250, y: 100 }, { text: 'プロセス1' })!,
-      ComponentFactory.createByType('decision', { x: 450, y: 100 }, { text: '判断' })!,
-      ComponentFactory.createByType('process', { x: 250, y: 250 }, { text: 'プロセス2' })!,
-      ComponentFactory.createByType('end', { x: 450, y: 250 }, { text: '終了' })!,
-    ];
+  // Add keyboard shortcut for undo (Ctrl+Z / Cmd+Z)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (onUndo && canUndo) {
+          onUndo();
+        }
+      }
+    };
 
-    setComponents(testComponents);
-  }, []);
-
-  const clearComponents = useCallback(() => {
-    setComponents([]);
-    setConnections([]);
-    setSelectedComponentIds([]);
-    setSelectedConnectionIds([]);
-  }, []);
-
-  const deleteSelected = useCallback(() => {
-    const remainingComponents = components.filter(
-      component => !selectedComponentIds.includes(component.id)
-    );
-    
-    const remainingConnections = connections.filter(
-      connection => 
-        !selectedComponentIds.includes(connection.from.componentId) &&
-        !selectedComponentIds.includes(connection.to.componentId) &&
-        !selectedConnectionIds.includes(connection.id)
-    );
-    
-    setComponents(remainingComponents);
-    setConnections(remainingConnections);
-    setSelectedComponentIds([]);
-    setSelectedConnectionIds([]);
-  }, [components, connections, selectedComponentIds, selectedConnectionIds]);
-
-  const duplicateSelected = useCallback(() => {
-    const selectedComponents = components.filter(
-      component => selectedComponentIds.includes(component.id)
-    );
-    
-    const duplicatedComponents = selectedComponents.map(component => ({
-      ...component,
-      id: `${component.type}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-      position: {
-        x: component.position.x + 20,
-        y: component.position.y + 20,
-      },
-      connectionPoints: component.connectionPoints.map((cp, index) => ({
-        ...cp,
-        id: `${component.type}-${Date.now()}-${index}`,
-      })),
-    }));
-    
-    const newComponents = [...components, ...duplicatedComponents];
-    setComponents(newComponents);
-    setSelectedComponentIds(duplicatedComponents.map(c => c.id));
-  }, [components, selectedComponentIds]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onUndo, canUndo]);
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          Canvas Test - Figma風フローエディター (Component System)
-        </h2>
-        <p className="text-gray-600">
-          新しいコンポーネントシステムのテスト。左サイドバーからドラッグ&ドロップ、選択、編集が可能です。
-        </p>
-      </div>
-
-      {/* Test Controls */}
-      <div className="mb-4 flex gap-2">
-        <button
-          onClick={addTestComponents}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          テストコンポーネント追加
-        </button>
-        <button
-          onClick={clearComponents}
-          className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-        >
-          全削除
-        </button>
-        <button
-          onClick={deleteSelected}
-          disabled={selectedComponentIds.length === 0 && selectedConnectionIds.length === 0}
-          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          選択削除 ({selectedComponentIds.length + selectedConnectionIds.length})
-        </button>
-        <button
-          onClick={duplicateSelected}
-          disabled={selectedComponentIds.length === 0}
-          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          複製 ({selectedComponentIds.length})
-        </button>
-        <button
-          onClick={() => {
-            if (fitToContentFn && components.length > 0) {
-              console.log('Manual fit-to-content triggered');
-              fitToContentFn(components);
-            }
-          }}
-          disabled={!fitToContentFn || components.length === 0}
-          className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          フィット ({components.length}個)
-        </button>
-        <button
-          onClick={() => {
-            if (projectId) {
-              const key = `flow-autosave-${projectId}`;
-              localStorage.removeItem(key);
-              console.log('Cleared autosave for project', projectId);
-              setComponents([]);
-              setConnections([]);
-              alert('オートセーブデータをクリアしました。');
-            }
-          }}
-          className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-        >
-          オートセーブクリア
-        </button>
-      </div>
-
+      {/* Canvas Interface */}
       <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
         <FlowCanvas
           width={1200}
@@ -326,7 +209,6 @@ export default function CanvasTest({
           onRedo={onRedo}
           canUndo={canUndo}
           canRedo={canRedo}
-          onFitToContent={setFitToContentFn}
           className="rounded-lg border border-gray-200"
         />
       </div>

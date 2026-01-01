@@ -5,14 +5,13 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CanvasTest } from '@/components/flow';
 import FlowEditorLayout from '@/components/flow/FlowEditorLayout';
 import ComponentSidebar from '@/components/flow/ComponentSidebar';
 import { useUndo } from '@/hooks/useUndo';
 import { flowApi } from '@/lib/api';
 import { DraggedComponent } from '@/types/flowComponents';
-import { ComponentFactory } from '@/utils/componentRegistry';
 
 interface FlowPageProps {
   params: {
@@ -47,8 +46,6 @@ export default function FlowPage({ params }: FlowPageProps) {
 
   // Load existing flow data on component mount
   useEffect(() => {
-    console.log('Loading flow data for project:', projectId);
-    
     const loadExistingFlow = async () => {
       try {
         setIsLoading(true);
@@ -59,20 +56,17 @@ export default function FlowPage({ params }: FlowPageProps) {
         const sessionData = sessionStorage.getItem(sessionKey);
         
         if (sessionData) {
-          console.log('Found fresh generated data in session storage');
           try {
             const parsedSessionData = JSON.parse(sessionData);
             
             // IMMEDIATELY clear the session data so it's only used once
             sessionStorage.removeItem(sessionKey);
-            console.log('Cleared session data to prevent future conflicts');
             
             // Convert the flow nodes to canvas components using the same logic as button #3
             const canvasComponents = convertNodesToCanvasComponents(parsedSessionData);
             const canvasConnections = generateConnectionsFromNodes(canvasComponents.filter(c => c.type === 'process'));
             
             if (canvasComponents.length === 0) {
-              console.error('❌ Canvas components array is empty!');
               setError('フロー図のコンポーネント変換に失敗しました。開発者にお問い合わせください。');
               return;
             }
@@ -89,7 +83,6 @@ export default function FlowPage({ params }: FlowPageProps) {
             setSuccessMessage(`${parsedSessionData.flow_nodes.length}ステップのフローを正常に生成しました`);
             setTimeout(() => setSuccessMessage(null), 5000);
             
-            console.log('✅ Fresh generated data loaded successfully');
             return;
           } catch (err) {
             console.error('Failed to parse session data:', err);
@@ -98,7 +91,6 @@ export default function FlowPage({ params }: FlowPageProps) {
         }
         
         // If no session data, load existing flow nodes from database OR autosave
-        console.log('No session data found, checking autosave and database...');
         
         // Check autosave first (prioritize user edits)
         const autosaveKey = `flow-autosave-${projectId}`;
@@ -108,14 +100,12 @@ export default function FlowPage({ params }: FlowPageProps) {
           try {
             const parsed = JSON.parse(autosaveData);
             if (parsed?.components && parsed.components.length > 0) {
-              console.log('Found autosaved data with', parsed.components.length, 'components');
               setGeneratedFlowData({
                 components: parsed.components,
                 connections: parsed.connections || [],
                 timestamp: parsed.timestamp || Date.now()
               });
               setRefreshKey(prev => prev + 1);
-              console.log('✅ Loaded autosaved data');
               return;
             }
           } catch (err) {
@@ -167,7 +157,6 @@ export default function FlowPage({ params }: FlowPageProps) {
           const canvasConnections = generateConnectionsFromNodes(canvasComponents);
           
           if (canvasComponents.length === 0) {
-            console.error('❌ Canvas components array is empty!');
             setError('フロー図のコンポーネント変換に失敗しました。開発者にお問い合わせください。');
             return;
           }
@@ -178,10 +167,6 @@ export default function FlowPage({ params }: FlowPageProps) {
             connections: canvasConnections,
             timestamp: Date.now()
           });
-          
-          console.log('✅ Loaded existing flow data:', { components: canvasComponents.length, connections: canvasConnections.length });
-        } else {
-          console.log('No existing nodes found - ready for new flow generation');
         }
       } catch (err) {
         console.error('Failed to load existing flow:', err);
@@ -241,12 +226,6 @@ export default function FlowPage({ params }: FlowPageProps) {
       
       const flowResponse = await flowApi.generateFlow(projectId);
       
-      console.log('Flow generation response:', {
-        actors: flowResponse.actors?.length || 0,
-        steps: flowResponse.steps?.length || 0,
-        flow_nodes: flowResponse.flow_nodes?.length || 0
-      });
-      
       // Check if we have valid data
       if (!flowResponse.flow_nodes || flowResponse.flow_nodes.length === 0) {
         setError('フロー図の生成に成功しましたが、データが空でした。ヒアリングログの内容を確認してください。');
@@ -279,7 +258,6 @@ export default function FlowPage({ params }: FlowPageProps) {
         timestamp: Date.now()
       };
       sessionStorage.setItem(sessionKey, JSON.stringify(sessionData));
-      console.log('Saved complete flow data to session storage');
       
       // Trigger refresh of Canvas component
       setRefreshKey(prev => prev + 1);
@@ -296,8 +274,6 @@ export default function FlowPage({ params }: FlowPageProps) {
 
   // Convert legacy flow nodes to canvas components with swimlane layout
   const convertNodesToCanvasComponents = (flowResponse: any) => {
-    console.log('=== CONVERTING TO SWIMLANE LAYOUT ===');
-    
     let { actors = [], steps = [], flow_nodes = [] } = flowResponse;
     
     if (!Array.isArray(flow_nodes) || flow_nodes.length === 0) {
@@ -307,7 +283,6 @@ export default function FlowPage({ params }: FlowPageProps) {
     
     // If actors or steps are missing/empty, extract them from flow_nodes
     if (!Array.isArray(actors) || actors.length === 0) {
-      console.log('Extracting actors from flow_nodes...');
       const uniqueActors = [...new Set(flow_nodes.map((node: any) => node.actor).filter(Boolean))];
       actors = uniqueActors.map((actorName: string, index: number) => ({
         name: actorName,
@@ -316,7 +291,6 @@ export default function FlowPage({ params }: FlowPageProps) {
     }
     
     if (!Array.isArray(steps) || steps.length === 0) {
-      console.log('Extracting steps from flow_nodes...');
       const uniqueSteps = [...new Set(flow_nodes.map((node: any) => node.step).filter(Boolean))];
       steps = uniqueSteps.map((stepName: string, index: number) => ({
         name: stepName,
@@ -354,20 +328,73 @@ export default function FlowPage({ params }: FlowPageProps) {
     
     const components: any[] = [];
     
-    // 1. 登場人物（Actor）コンポーネントを縦に配置（動的サイズ）
+    // 1. まず各アクターが関係するノードの範囲を事前計算
+    const actorNodeRanges: { minY: number; maxY: number; hasNodes: boolean }[] = [];
+    
     actors.forEach((actor: any, actorIndex: number) => {
-      // このアクターの行にあるセルの最大ノード数を計算
-      let maxNodesInThisRow = 1;
+      let minNodeY = Infinity;
+      let maxNodeY = -Infinity;
+      let hasNodes = false;
+      
+      // このアクターが関係する全てのフローノードの位置を確認
       steps.forEach((_: any, stepIndex: number) => {
         const cellKey = `${actorIndex}-${stepIndex}`;
-        if (cellNodes[cellKey]) {
-          maxNodesInThisRow = Math.max(maxNodesInThisRow, cellNodes[cellKey].length);
+        if (cellNodes[cellKey] && cellNodes[cellKey].length > 0) {
+          hasNodes = true;
+          const cellX = START_X + (stepIndex * CELL_WIDTH);
+          const cellY = START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT);
+          
+          cellNodes[cellKey].forEach((node: any, indexInCell: number) => {
+            const nodeHeight = 85;
+            const nodeSpacing = 20;
+            
+            let nodeY;
+            if (cellNodes[cellKey].length === 1) {
+              nodeY = cellY + (DYNAMIC_CELL_HEIGHT - nodeHeight) / 2;
+            } else {
+              const totalNodesHeight = cellNodes[cellKey].length * nodeHeight + (cellNodes[cellKey].length - 1) * nodeSpacing;
+              const startY = cellY + (DYNAMIC_CELL_HEIGHT - totalNodesHeight) / 2;
+              nodeY = startY + indexInCell * (nodeHeight + nodeSpacing);
+            }
+            
+            minNodeY = Math.min(minNodeY, nodeY);
+            maxNodeY = Math.max(maxNodeY, nodeY + nodeHeight);
+          });
         }
       });
       
-      // アクターの高さをその行の最大ノード数に合わせて調整
-      const rowHeight = Math.max(CELL_HEIGHT, 100 + (maxNodesInThisRow - 1) * 110);
-      const actorHeight = Math.max(60, Math.min(rowHeight * 0.7, 120));
+      actorNodeRanges.push({
+        minY: hasNodes ? minNodeY : START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT),
+        maxY: hasNodes ? maxNodeY : START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT) + 80,
+        hasNodes
+      });
+    });
+    
+    // 2. 登場人物（Actor）コンポーネントを重ならないように配置
+    let currentY = START_Y + STEP_LANE_HEIGHT + MARGIN;
+    const ACTOR_MARGIN = 30; // 登場人物間のマージン
+    
+    actors.forEach((actor: any, actorIndex: number) => {
+      const range = actorNodeRanges[actorIndex];
+      
+      // アクターの高さと位置を計算
+      let actorHeight, actorY;
+      if (range.hasNodes) {
+        // ノードがある場合：ノード全体をカバーする高さ + 少しのマージン
+        const nodeRangeHeight = range.maxY - range.minY;
+        actorHeight = Math.max(60, nodeRangeHeight + 20);
+        
+        // 前のアクターとの重複を避けるため、currentYとノード位置の最大値を使用
+        actorY = Math.max(currentY, range.minY - 10);
+      } else {
+        // ノードがない場合：デフォルトの高さ
+        actorHeight = 80;
+        actorY = currentY;
+      }
+      
+      // 次のアクターの開始位置を更新（現在のアクターの終了位置 + マージン）
+      currentY = actorY + actorHeight + ACTOR_MARGIN;
+      
       const textLength = (actor.name || `登場人物${actorIndex + 1}`).length;
       const actorWidth = Math.max(120, Math.min(textLength * 12 + 40, ACTOR_LANE_WIDTH - 20));
       
@@ -375,8 +402,8 @@ export default function FlowPage({ params }: FlowPageProps) {
         id: `actor-${actorIndex}`,
         type: 'actor',
         position: { 
-          x: MARGIN, 
-          y: START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT) + (DYNAMIC_CELL_HEIGHT - actorHeight) / 2
+          x: START_X - ACTOR_LANE_WIDTH + 60, // 登場人物をさらに右側に移動（40px → 80px）
+          y: actorY
         },
         size: { width: actorWidth, height: actorHeight },
         text: actor.name || `登場人物${actorIndex + 1}`,
@@ -399,27 +426,82 @@ export default function FlowPage({ params }: FlowPageProps) {
       components.push(actorComponent);
     });
     
-    // 2. ステップ（Step）コンポーネントを横に配置（動的サイズ）
+    // 2. まずフローノードの配置を事前計算して、各ステップの必要幅を決定
+    const stepNodeRanges: { minX: number; maxX: number; hasNodes: boolean }[] = [];
+    
     steps.forEach((step: any, stepIndex: number) => {
-      // このステップの列にあるセルの最大ノード数を計算
-      let maxNodesInThisColumn = 1;
+      let minNodeX = Infinity;
+      let maxNodeX = -Infinity;
+      let hasNodes = false;
+      
+      // このステップに関係する全てのフローノードの位置を確認
       actors.forEach((_: any, actorIndex: number) => {
         const cellKey = `${actorIndex}-${stepIndex}`;
-        if (cellNodes[cellKey]) {
-          maxNodesInThisColumn = Math.max(maxNodesInThisColumn, cellNodes[cellKey].length);
+        if (cellNodes[cellKey] && cellNodes[cellKey].length > 0) {
+          hasNodes = true;
+          const cellX = START_X + (stepIndex * CELL_WIDTH);
+          const nodeWidth = 200;
+          
+          // ノードの左端と右端を計算
+          const nodeX = cellX + (CELL_WIDTH - nodeWidth) / 2;
+          minNodeX = Math.min(minNodeX, nodeX);
+          maxNodeX = Math.max(maxNodeX, nodeX + nodeWidth);
         }
       });
       
-      const textLength = (step.name || `ステップ${stepIndex + 1}`).length;
-      const stepWidth = Math.max(180, Math.min(textLength * 12 + 40, CELL_WIDTH - 20));
+      stepNodeRanges.push({
+        minX: hasNodes ? minNodeX : START_X + (stepIndex * CELL_WIDTH),
+        maxX: hasNodes ? maxNodeX : START_X + (stepIndex * CELL_WIDTH) + CELL_WIDTH,
+        hasNodes
+      });
+    });
+    
+    // 3. ステップ（Step）コンポーネントを横に配置（ノードの幅に合わせて動的サイズ）
+    // まず一番上の登場人物コンポーネントの上端位置を取得
+    let topActorTopY = START_Y + STEP_LANE_HEIGHT + MARGIN; // デフォルト値
+    if (components.length > 0) {
+      const topActorComponent = components.find(c => c.id === 'actor-0');
+      if (topActorComponent) {
+        topActorTopY = topActorComponent.position.y;
+      }
+    }
+    
+    steps.forEach((step: any, stepIndex: number) => {
+      const range = stepNodeRanges[stepIndex];
+      
+      // ステップの幅を、関係するノードの範囲に合わせて設定
+      let stepWidth;
+      if (range.hasNodes) {
+        // ノードがある場合：ノードの範囲 + 少しのマージン
+        const nodeRangeWidth = range.maxX - range.minX;
+        const textLength = (step.name || `ステップ${stepIndex + 1}`).length;
+        const minTextWidth = textLength * 12 + 40;
+        stepWidth = Math.max(minTextWidth, nodeRangeWidth + 20);
+      } else {
+        // ノードがない場合：テキストベースの幅
+        const textLength = (step.name || `ステップ${stepIndex + 1}`).length;
+        stepWidth = Math.max(180, textLength * 12 + 40);
+      }
+      
       const stepHeight = 60;
+      
+      // ステップの位置を、関係するノードの中央に配置
+      let stepX;
+      if (range.hasNodes) {
+        stepX = (range.minX + range.maxX) / 2 - stepWidth / 2;
+      } else {
+        stepX = START_X + (stepIndex * CELL_WIDTH) + (CELL_WIDTH - stepWidth) / 2;
+      }
+      
+      // ステップのY位置を、下端が一番上の登場人物の上端に合うように設定
+      const stepY = topActorTopY - stepHeight;
       
       const stepComponent = {
         id: `step-${stepIndex}`,
         type: 'step',
         position: { 
-          x: START_X + (stepIndex * CELL_WIDTH) + (CELL_WIDTH - stepWidth) / 2, 
-          y: MARGIN 
+          x: stepX,
+          y: stepY  // ステップの下端を一番上の登場人物の上端に合わせて配置
         },
         size: { width: stepWidth, height: stepHeight },
         text: step.name || `ステップ${stepIndex + 1}`,
@@ -442,12 +524,25 @@ export default function FlowPage({ params }: FlowPageProps) {
       components.push(stepComponent);
     });
     
-    // 3. フローノードをマトリックス形式で配置（完全に重ならないように）
+    // 4. フローノードを登場人物の実際の位置に合わせて配置
     // 各セルのノードを配置
     Object.entries(cellNodes).forEach(([cellKey, nodesInCell]) => {
       const [actorIndex, stepIndex] = cellKey.split('-').map(Number);
       const cellX = START_X + (stepIndex * CELL_WIDTH);
-      const cellY = START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT);
+      
+      // 登場人物の実際の位置と高さを取得
+      const actorComponent = components.find(c => c.id === `actor-${actorIndex}`);
+      let cellY, cellHeight;
+      
+      if (actorComponent) {
+        // 登場人物コンポーネントが存在する場合、その位置と高さを使用
+        cellY = actorComponent.position.y + 10; // 少しのマージン
+        cellHeight = actorComponent.size.height - 20; // 上下のマージンを考慮
+      } else {
+        // フォールバック：従来の計算方法
+        cellY = START_Y + STEP_LANE_HEIGHT + MARGIN + (actorIndex * DYNAMIC_CELL_HEIGHT);
+        cellHeight = DYNAMIC_CELL_HEIGHT;
+      }
       
       nodesInCell.forEach((node: any, indexInCell: number) => {
         const nodeWidth = 200;
@@ -459,11 +554,11 @@ export default function FlowPage({ params }: FlowPageProps) {
         if (nodesInCell.length === 1) {
           // セル内に1つだけの場合は中央配置
           x = cellX + (CELL_WIDTH - nodeWidth) / 2;
-          y = cellY + (DYNAMIC_CELL_HEIGHT - nodeHeight) / 2;
+          y = cellY + (cellHeight - nodeHeight) / 2;
         } else {
           // セル内に複数ある場合は縦に等間隔で配置
           const totalNodesHeight = nodesInCell.length * nodeHeight + (nodesInCell.length - 1) * nodeSpacing;
-          const startY = cellY + (DYNAMIC_CELL_HEIGHT - totalNodesHeight) / 2;
+          const startY = cellY + (cellHeight - totalNodesHeight) / 2;
           
           x = cellX + (CELL_WIDTH - nodeWidth) / 2;
           y = startY + indexInCell * (nodeHeight + nodeSpacing);
@@ -544,25 +639,6 @@ export default function FlowPage({ params }: FlowPageProps) {
       }
     });
     
-    console.log(`✅ Generated ${components.length} components: ${actors.length} actors, ${steps.length} steps, ${flow_nodes.length} flow nodes`);
-    console.log(`Max nodes in cell: ${maxNodesInCell}, Dynamic cell height: ${DYNAMIC_CELL_HEIGHT}`);
-    
-    // デバッグ: 各コンポーネントの位置を出力
-    console.log('=== COMPONENT POSITIONS ===');
-    components.forEach(comp => {
-      console.log(`${comp.type} "${comp.text}": (${comp.position.x}, ${comp.position.y}) size: ${comp.size.width}x${comp.size.height}`);
-    });
-    
-    // デバッグ: セル内のノード数を出力
-    console.log('=== CELL NODE DISTRIBUTION ===');
-    Object.entries(cellNodes).forEach(([cellKey, nodesInCell]) => {
-      const [actorIdx, stepIdx] = cellKey.split('-').map(Number);
-      console.log(`Cell [${actors[actorIdx]?.name}, ${steps[stepIdx]?.name}]: ${nodesInCell.length} nodes`);
-      nodesInCell.forEach((node, idx) => {
-        console.log(`  - Node ${idx}: "${node.text}"`);
-      });
-    });
-    
     return components;
   };
 
@@ -600,11 +676,8 @@ export default function FlowPage({ params }: FlowPageProps) {
       <div className="flex items-center space-x-4 min-w-0 flex-1">
         <div className="min-w-0 flex-shrink">
           <h1 className="text-lg font-semibold text-gray-900 truncate">
-            AI Business Flow - フロー図エディター
+            Business Flow Editor
           </h1>
-          <p className="text-sm text-gray-600 hidden sm:block truncate">
-            Figma風のビジュアルフローエディター
-          </p>
         </div>
 
         {/* Properties Panel Toggle */}
@@ -668,28 +741,6 @@ export default function FlowPage({ params }: FlowPageProps) {
               <span className="hidden lg:inline whitespace-nowrap">フロー図を作成</span>
             </>
           )}
-        </button>
-        
-        <button 
-          onClick={() => {
-            if (projectId) {
-              const autosaveKey = `flow-autosave-${projectId}`;
-              localStorage.removeItem(autosaveKey);
-              console.log('Cleared autosave data');
-              // Clear current state
-              setGeneratedFlowData(null);
-              setRefreshKey(prev => prev + 1);
-              setSuccessMessage('オートセーブデータをクリアしました。新しいフロー図を作成してください。');
-              setTimeout(() => setSuccessMessage(null), 3000);
-            }
-          }}
-          className="bg-yellow-600 text-white px-3 py-2 rounded-lg hover:bg-yellow-700 transition-colors font-medium flex items-center space-x-2 flex-shrink-0"
-          title="古いデータをクリアして新しいフロー図を作成"
-        >
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          <span className="hidden lg:inline whitespace-nowrap">リセット</span>
         </button>
       </div>
     </div>

@@ -116,13 +116,13 @@ export default function FlowCanvas({
     connections,
     onConnectionsChange: onConnectionsChange || (() => {}),
     onConnectionStart: (componentId, pointId) => {
-      console.log('Connection started:', componentId, pointId);
+      // Connection started
     },
     onConnectionEnd: (componentId, pointId) => {
-      console.log('Connection ended:', componentId, pointId);
+      // Connection ended
     },
     onConnectionCancel: () => {
-      console.log('Connection cancelled');
+      // Connection cancelled
     },
   });
 
@@ -203,9 +203,7 @@ export default function FlowCanvas({
 
   // Monitor components prop changes
   useEffect(() => {
-    console.log('=== FLOW CANVAS: COMPONENTS PROP CHANGED ===');
-    console.log('Components count:', components.length);
-    console.log('Components:', components.map(c => ({ id: c.id, type: c.type, position: c.position })));
+    // Silent monitoring - components updated
   }, [components]);
 
   // Expose fitToContent function to parent
@@ -213,38 +211,27 @@ export default function FlowCanvas({
     if (onFitToContent) {
       // Create a wrapper function that also provides direct scale setting
       const fitToContentWrapper = (components?: any[] | null) => {
-        console.log('=== WRAPPER CALLED ===');
-        console.log('Components passed to wrapper:', components);
-        
         if (components && components.length > 0) {
-          console.log('Calling internal fitToContent function');
           // Use setTimeout to avoid setState during render
           setTimeout(() => {
             fitToContent(components);
           }, 0);
-        } else {
-          console.log('No components provided to wrapper');
         }
       };
       
       // Add a direct scale setter using the proper setZoom function
       (fitToContentWrapper as any).setScale = (scale: number, centerX?: number, centerY?: number) => {
-        console.log('=== DIRECT SCALE SETTING ===');
-        console.log('Scale:', scale, 'Center:', { x: centerX, y: centerY });
-        
         // Use the setZoom function from the hook with center point
         const center = centerX !== undefined && centerY !== undefined 
           ? { x: centerX, y: centerY } 
           : undefined;
         
-        console.log('Calling setZoom with:', { scale, center });
         // Use setTimeout to avoid setState during render
         setTimeout(() => {
           setZoom(scale, center);
         }, 0);
       };
       
-      console.log('Exposing fitToContent wrapper to parent');
       onFitToContent(fitToContentWrapper);
     }
   }, [onFitToContent, fitToContent, setZoom]);
@@ -713,15 +700,8 @@ export default function FlowCanvas({
   }, [components, onComponentsChange]);
 
   const handleComponentSelect = useCallback((id: string, multiSelect = false) => {
-    console.log('=== HANDLE COMPONENT SELECT ===');
-    console.log('Component ID:', id);
-    console.log('Multi select:', multiSelect);
-    console.log('Current selectedIds:', selectedIds);
-    
     selectComponent(id, multiSelect);
-    
-    console.log('Called selectComponent');
-  }, [selectComponent, selectedIds]);
+  }, [selectComponent]);
 
   const handleComponentStartDrag = useCallback((id: string, startPoint: Point) => {
     if (!containerRef.current) return;
@@ -797,16 +777,11 @@ export default function FlowCanvas({
   // Drag and drop from sidebar
   const { handleDrop, handleDragOver } = useDragAndDrop({
     onDrop: (template, position) => {
-      console.log('=== FLOW CANVAS ON DROP ===');
-      console.log('Template:', template);
-      console.log('Position:', position);
-      
       try {
         // Apply grid snapping if enabled
         let dropPosition = position;
         if (canvasState.grid.snapEnabled) {
           dropPosition = snapToGrid(position, canvasState.grid.size);
-          console.log('Snapped position:', dropPosition);
         }
         
         // Ensure components are not placed outside visible area
@@ -814,24 +789,12 @@ export default function FlowCanvas({
           x: Math.max(0, dropPosition.x),
           y: Math.max(0, dropPosition.y)
         };
-        console.log('Adjusted position (min bounds):', dropPosition);
         
         // Create new component (treat connector the same as other templates)
-        console.log('Creating component from template...');
-        console.log('Template details:', {
-          type: template.type,
-          name: template.name,
-          category: template.category,
-          defaultSize: template.defaultSize,
-          defaultStyle: template.defaultStyle
-        });
-
-        // If connector, attempt to snap endpoints to nearby connection points
         let createPosition = dropPosition;
         let createSize = template.defaultSize;
 
         if (template.type === 'connector') {
-          console.log('Processing connector component...');
           try {
             const SNAP_DISTANCE = 24; // pixels
             const midY = dropPosition.y + (template.defaultSize.height / 2);
@@ -894,81 +857,41 @@ export default function FlowCanvas({
               const newY = (leftSnap.y + rightSnap.y) / 2 - (template.defaultSize.height / 2);
               createPosition = { x: Math.min(leftSnap.x, rightSnap.x), y: newY };
               createSize = { width: newWidth, height: template.defaultSize.height };
-              console.log('Connector snapped both endpoints to', leftSnap, rightSnap);
             } else if (leftSnap) {
               // Snap left endpoint
               createPosition = { x: leftSnap.x, y: leftSnap.y - (template.defaultSize.height / 2) };
-              console.log('Connector snapped left endpoint to', leftSnap);
             } else if (rightSnap) {
               // Snap right endpoint
               createPosition = { x: rightSnap.x - template.defaultSize.width, y: rightSnap.y - (template.defaultSize.height / 2) };
-              console.log('Connector snapped right endpoint to', rightSnap);
             }
           } catch (err) {
             console.error('Failed to compute connector snap:', err);
           }
         }
 
-        console.log('About to call ComponentFactory.createFromTemplate...');
-        console.log('Create position:', createPosition);
-        console.log('Create size:', createSize);
-        
         const newComponent = ComponentFactory.createFromTemplate(template, createPosition, { size: createSize });
         
-        console.log('=== COMPONENT CREATION RESULT ===');
-        console.log('Template type:', template.type);
-        console.log('Template name:', template.name);
-        console.log('Created component:', newComponent);
-        
         if (newComponent) {
-          console.log('Created component details:', {
-            id: newComponent.id,
-            type: newComponent.type,
-            text: newComponent.text,
-            position: newComponent.position,
-            size: newComponent.size
-          });
           const updatedComponents = [...components, newComponent];
-          console.log('Updated components array length:', updatedComponents.length);
-          console.log('Calling onComponentsChange with:', updatedComponents);
           onComponentsChange?.(updatedComponents);
-          console.log('onComponentsChange called');
           
           // Use setTimeout to avoid setState during render
           setTimeout(() => {
             onSelectionChange?.([newComponent.id]);
           }, 0);
-          
-          console.log('Component added successfully');
         } else {
           console.error('Failed to create component from template');
-          console.error('Template details:', {
-            type: template.type,
-            name: template.name,
-            defaultSize: template.defaultSize,
-            defaultStyle: template.defaultStyle
-          });
         }
         
       } catch (error) {
-        console.error('=== ERROR IN FLOW CANVAS ON DROP ===');
-        console.error('Error:', error);
-        console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace');
-        console.error('Template:', template);
-        console.error('Position:', position);
+        console.error('Error in flow canvas drop:', error);
       }
     },
   });
 
   const handleCanvasDrop = useCallback((event: React.DragEvent) => {
-    console.log('=== CANVAS DROP EVENT ===');
-    console.log('Event:', event);
-    console.log('Event type:', event.type);
-    console.log('DataTransfer:', event.dataTransfer);
-    
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) {
-      console.log('No container rect available');
       return;
     }
     
@@ -976,18 +899,11 @@ export default function FlowCanvas({
     const canvasX = (event.clientX - rect.left - canvasState.transform.x) / canvasState.transform.scale;
     const canvasY = (event.clientY - rect.top - canvasState.transform.y) / canvasState.transform.scale;
     
-    console.log('Drop position:', { canvasX, canvasY });
-    console.log('Transform:', canvasState.transform);
-    console.log('Components before drop:', components.length);
-    
     handleDrop(event, { x: canvasX, y: canvasY });
     setIsDragOver(false);
-    
-    console.log('Drop handled');
-  }, [handleDrop, components.length, canvasState.transform]);
+  }, [handleDrop, canvasState.transform]);
 
   const handleCanvasDragOver = useCallback((event: React.DragEvent) => {
-    console.log('=== CANVAS DRAG OVER ===');
     event.preventDefault(); // This is crucial for allowing drop
     event.dataTransfer.dropEffect = 'copy';
     handleDragOver(event);
