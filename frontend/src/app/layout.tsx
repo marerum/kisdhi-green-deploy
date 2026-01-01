@@ -3,6 +3,7 @@ import './globals.css'
 import Navigation from '@/components/layout/Navigation'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { ToastProvider } from '@/providers/ToastProvider'
+import { AuthProvider } from '@/contexts/AuthContext'
 import ConfigValidator from '@/components/common/ConfigValidator'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
 
@@ -21,19 +22,21 @@ export default function RootLayout({
       <body className="bg-gray-50 min-h-screen">
         <ErrorBoundary>
           <ConfigValidator>
-            <ToastProvider>
-              <ErrorBoundary>
-                <Navigation />
-              </ErrorBoundary>
-              <ErrorBoundary>
-                <Breadcrumb />
-              </ErrorBoundary>
-              <main className="flex-1">
-                <ErrorBoundary showRetry={true}>
-                  {children}
+            <AuthProvider>
+              <ToastProvider>
+                <ErrorBoundary>
+                  <Navigation />
                 </ErrorBoundary>
-              </main>
-            </ToastProvider>
+                <ErrorBoundary>
+                  <Breadcrumb />
+                </ErrorBoundary>
+                <main className="flex-1">
+                  <ErrorBoundary showRetry={true}>
+                    {children}
+                  </ErrorBoundary>
+                </main>
+              </ToastProvider>
+            </AuthProvider>
           </ConfigValidator>
         </ErrorBoundary>
       </body>

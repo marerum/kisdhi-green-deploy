@@ -12,6 +12,8 @@ import ComponentSidebar from '@/components/flow/ComponentSidebar';
 import { useUndo } from '@/hooks/useUndo';
 import { flowApi } from '@/lib/api';
 import { DraggedComponent } from '@/types/flowComponents';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 interface FlowPageProps {
   params: {
@@ -21,6 +23,8 @@ interface FlowPageProps {
 
 export default function FlowPage({ params }: FlowPageProps) {
   const projectId = parseInt(params.id);
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +48,13 @@ export default function FlowPage({ params }: FlowPageProps) {
     canUndo,
     recordOperation 
   } = useUndo();
+
+  // Authentication guard
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   // Load existing flow data on component mount
   useEffect(() => {
@@ -180,10 +191,10 @@ export default function FlowPage({ params }: FlowPageProps) {
       }
     };
 
-    if (projectId) {
+    if (projectId && isAuthenticated) {
       loadExistingFlow();
     }
-  }, [projectId]);
+  }, [projectId, isAuthenticated]);
 
 
 
@@ -812,6 +823,23 @@ export default function FlowPage({ params }: FlowPageProps) {
       </div>
     </div>
   );
+
+  // Show loading screen while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <FlowEditorLayout

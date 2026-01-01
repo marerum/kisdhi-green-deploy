@@ -156,6 +156,10 @@ app.include_router(projects.router)
 app.include_router(hearing.router)
 app.include_router(flow.router)
 
+# Import and include auth router
+from .routers import auth
+app.include_router(auth.router)
+
 @app.get("/")
 async def root():
     return {"message": "AI Business Flow API", "version": "0.1.0"}

@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { HearingInput, HearingHistory } from '@/components/hearing';
 import { hearingApi, flowApi } from '@/lib/api';
 import { HearingLogResponse } from '@/types/api';
@@ -20,31 +21,39 @@ interface HearingPageProps {
 export default function HearingPage({ params }: HearingPageProps) {
   const projectId = parseInt(params.id);
   const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
   const [hearingLogs, setHearingLogs] = useState<HearingLogResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingLog, setEditingLog] = useState<HearingLogResponse | null>(null);
+
+  // Authentication guard
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
   // Load hearing logs on component mount
   useEffect(() => {
     const loadHearingLogs = async () => {
       try {
-        setIsLoading(true);
+        setIsLoadingData(true);
         const logs = await hearingApi.getHearingLogs(projectId);
         setHearingLogs(logs);
       } catch (err) {
         console.error('Failed to load hearing logs:', err);
         setError('ヒアリングログの読み込みに失敗しました');
       } finally {
-        setIsLoading(false);
+        setIsLoadingData(false);
       }
     };
 
-    if (projectId) {
+    if (projectId && isAuthenticated) {
       loadHearingLogs();
     }
-  }, [projectId]);
+  }, [projectId, isAuthenticated]);
 
   // Debug: Track hearing logs changes
   useEffect(() => {
@@ -164,6 +173,23 @@ export default function HearingPage({ params }: HearingPageProps) {
     }
   };
 
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-6xl mx-auto">
@@ -219,7 +245,7 @@ export default function HearingPage({ params }: HearingPageProps) {
           <div>
             <HearingHistory 
               hearingLogs={hearingLogs}
-              isLoading={isLoading}
+              isLoading={isLoadingData}
               onHearingLogDeleted={handleHearingLogDeleted}
               onHearingLogEdit={handleHearingLogEdit}
             />

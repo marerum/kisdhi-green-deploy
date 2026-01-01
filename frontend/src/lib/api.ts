@@ -121,10 +121,30 @@ async function makeRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // Get user from localStorage for authentication
+  const getUserId = (): string | null => {
+    try {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        return userData.user_id;
+      }
+    } catch (error) {
+      console.error('Failed to get user ID from localStorage:', error);
+    }
+    return null;
+  };
+  
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
+
+  // Add authentication header if user is logged in
+  const userId = getUserId();
+  if (userId) {
+    (defaultHeaders as any)['X-User-ID'] = userId;
+  }
 
   const requestOptions: RequestInit = {
     ...options,
@@ -468,5 +488,41 @@ export const api = {
   hearing: hearingApi,
   flow: flowApi,
 };
+
+// Authentication API functions
+export const authApi = {
+  /**
+   * Login with user ID
+   */
+  async login(userId: string): Promise<any> {
+    return makeRequestWithFeedback<any>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }, 'Logging in');
+  },
+
+  /**
+   * Register new user
+   */
+  async register(userId: string, displayName?: string): Promise<any> {
+    return makeRequestWithFeedback<any>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ 
+        user_id: userId,
+        display_name: displayName 
+      }),
+    }, 'Registering user');
+  },
+
+  /**
+   * Validate user
+   */
+  async validateUser(userId: string): Promise<any> {
+    return makeRequestWithFeedback<any>(`/auth/validate/${userId}`, {}, 'Validating user');
+  },
+};
+
+// Add auth to the main API object
+api.auth = authApi;
 
 export default api;

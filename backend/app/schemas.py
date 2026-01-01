@@ -7,6 +7,29 @@ from datetime import datetime
 from typing import Optional, List
 
 
+class UserCreate(BaseModel):
+    """Schema for creating a new user."""
+    user_id: str = Field(..., min_length=1, max_length=100, description="User ID")
+    display_name: Optional[str] = Field(None, max_length=255, description="Display name")
+
+
+class UserLogin(BaseModel):
+    """Schema for user login."""
+    user_id: str = Field(..., min_length=1, max_length=100, description="User ID")
+
+
+class UserResponse(BaseModel):
+    """Schema for user response data."""
+    id: int
+    user_id: str
+    display_name: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ProjectCreate(BaseModel):
     """Schema for creating a new project."""
     name: str = Field(..., min_length=1, max_length=255, description="Project name")
@@ -23,6 +46,7 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(BaseModel):
     """Schema for project response data."""
     id: int
+    user_id: int
     name: str
     department: Optional[str]
     status: str
