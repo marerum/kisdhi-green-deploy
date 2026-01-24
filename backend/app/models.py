@@ -65,6 +65,11 @@ class Project(Base):
         cascade="all, delete-orphan",
         order_by="FlowNode.order"
     )
+    flow_edges: Mapped[List["FlowEdge"]] = relationship(
+        "FlowEdge",
+        back_populates="project",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Project(id={self.id}, name='{self.name}', status='{self.status}', user_id={self.user_id})>"
@@ -101,8 +106,10 @@ class FlowNode(Base):
     project_id: Mapped[int] = Column(Integer, ForeignKey("projects.id"), nullable=False)
     text: Mapped[str] = Column(String(500), nullable=False)
     order: Mapped[int] = Column(Integer, nullable=False)
-    actor: Mapped[Optional[str]] = Column(String(100), nullable=True)  # Actor/role for lane-step template
-    step: Mapped[Optional[str]] = Column(String(100), nullable=True)   # Step name for lane-step template
+    actor: Mapped[Optional[str]] = Column(String(100), nullable=True)
+    step: Mapped[Optional[str]] = Column(String(100), nullable=True)
+    position_x: Mapped[Optional[float]] = Column(Integer, nullable=True)
+    position_y: Mapped[Optional[float]] = Column(Integer, nullable=True)
     created_at: Mapped[datetime] = Column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -112,3 +119,26 @@ class FlowNode(Base):
     def __repr__(self) -> str:
         text_preview = self.text[:50] + "..." if len(self.text) > 50 else self.text
         return f"<FlowNode(id={self.id}, project_id={self.project_id}, order={self.order}, text='{text_preview}')>"
+
+
+class FlowEdge(Base):
+    """
+    FlowEdge model representing connections between flow nodes.
+    Stores edges using node order numbers for stability across regenerations.
+    """
+    __tablename__ = "flow_edges"
+
+    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    from_node_order: Mapped[int] = Column(Integer, nullable=False)
+    to_node_order: Mapped[int] = Column(Integer, nullable=False)
+    condition: Mapped[Optional[str]] = Column(Text, nullable=True)
+    created_at: Mapped[datetime] = Column(DateTime, default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    project: Mapped["Project"] = relationship("Project", back_populates="flow_edges")
+
+    def __repr__(self) -> str:
+        condition_str = f", condition='{self.condition}'" if self.condition else ""
+        return f"<FlowEdge(id={self.id}, project_id={self.project_id}, {self.from_node_order}→{self.to_node_order}{condition_str})>"

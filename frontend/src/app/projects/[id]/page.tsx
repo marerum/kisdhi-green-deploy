@@ -201,7 +201,8 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
             </Link>
           </div>
 
-          {/* Flow Section */}
+          {/* Flow Section - Commented out 2026/01/22: Functionality now available in Hearing Input screen
+              Kept for future restoration if needed
           <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center">
@@ -212,10 +213,10 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                    フロー図編集
+                    フロー図編集（詳細）
                   </h3>
                   <p className="text-gray-600 text-sm">
-                    ビジュアルフローエディター
+                    コンポーネントベースの高度な編集
                   </p>
                 </div>
               </div>
@@ -223,20 +224,14 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
             
             <div className="mb-4">
               <div className="text-sm text-gray-600 mb-2">
-                <span className="font-medium">ステータス:</span>
-                <span className="ml-2">
-                  {hearingLogs.length > 0 ? (
-                    <span className="text-green-600">生成可能</span>
-                  ) : (
-                    <span className="text-gray-500">ヒアリング入力が必要</span>
-                  )}
+                <span className="font-medium">機能:</span>
+                <span className="ml-2 text-xs text-gray-500">
+                  独立したフロー編集画面
                 </span>
               </div>
-              {hearingLogs.length === 0 && (
-                <div className="text-xs text-gray-500">
-                  フロー図を生成するには、まずヒアリング内容を入力してください
-                </div>
-              )}
+              <div className="text-xs text-gray-500">
+                ※ 通常のフロー編集はヒアリング入力画面で行えます
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -277,6 +272,7 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
               )}
             </div>
           </div>
+          */}
         </div>
 
         {/* Recent Activity */}

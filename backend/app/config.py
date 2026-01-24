@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # OpenAI settings
     openai_api_key: Optional[str] = None
     
+    # Claude (Anthropic) settings - 2026/01/20追加: リアルタイムフロー生成機能のClaude API統合
+    anthropic_api_key: Optional[str] = None
+    claude_model: str = "claude-sonnet-4-20250514"  # Claude Sonnet 4.5
+    claude_max_tokens: int = 4096
+    claude_temperature: float = 0.7
+    
     # Application settings
     environment: str = "development"
     debug: bool = False
@@ -39,6 +45,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # 未定義の環境変数を無視する
     
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -87,11 +94,17 @@ class Settings(BaseSettings):
             if not self.database_name:
                 errors.append("DATABASE_NAME is required when DATABASE_URL is not provided")
         
-        # Check OpenAI API key
+        # Check OpenAI API key (警告のみ - リアル���イム生成機能の動作確認用)
         if not self.openai_api_key:
-            errors.append("OPENAI_API_KEY is required for AI flow generation")
+            print("WARNING: OPENAI_API_KEY is not set. AI flow generation features will not work.")
         elif not self.openai_api_key.startswith(('sk-', 'sk-proj-')):
-            errors.append("OPENAI_API_KEY appears to be invalid (should start with 'sk-' or 'sk-proj-')")
+            print("WARNING: OPENAI_API_KEY appears to be invalid (should start with 'sk-' or 'sk-proj-')")
+        
+        # 2026/01/20追加: Claude APIキーの検証 (リアルタイムフロー生成の主要実装)
+        if not self.anthropic_api_key:
+            print("WARNING: ANTHROPIC_API_KEY is not set. Claude-based flow generation will not work.")
+        elif not self.anthropic_api_key.startswith('sk-ant-'):
+            print("WARNING: ANTHROPIC_API_KEY appears to be invalid (should start with 'sk-ant-')")
         
         # Check secret key for production
         if self.environment == "production" and not self.secret_key:
@@ -125,6 +138,8 @@ class Settings(BaseSettings):
             "debug": self.debug,
             "database_host": self.database_host,
             "database_port": self.database_port,
+            "anthropic_api_key_configured": bool(self.anthropic_api_key),
+            "claude_model": self.claude_model,
             "database_name": self.database_name,
             "database_ssl_required": self.database_ssl_required,
             "allowed_origins": self.allowed_origins_list,

@@ -1,5 +1,7 @@
 """
 Hearing log API endpoints for AI Business Flow application.
+
+2026/01/20更新: Claude API統合により増分フロー生成を実装
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +15,8 @@ from ..schemas import HearingLogCreate, HearingLogUpdate, HearingLogResponse
 from fastapi import File, UploadFile
 import httpx
 from ..config import settings
+# 2026/01/20追加: ClaudeServiceをインポート
+from ..services.ai import claude_service
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -275,3 +279,80 @@ async def transcribe_hearing_audio(project_id: int, file: UploadFile = File(...)
         logger.error(f"Error type: {type(e).__name__}")
         logger.error(f"Error details: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to transcribe audio")
+    
+    # ============================================
+# リアルタイム生成用: 増分フロー生成エンドポイント
+# ============================================
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+
+class IncrementalFlowRequest(BaseModel):
+    """増分フロー生成のリクエスト"""
+    existing_flow: Optional[Dict[str, Any]] = None  # 既存のフロー JSON
+    new_text: str  # 新しく追加された発言
+    context: str  # これまでの全文脈
+
+@router.post("/projects/{project_id}/hearing/flow/incremental")
+async def generate_incremental_flow(
+    project_id: int,
+    request: IncrementalFlowRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    増分的にフローを生成（追加・削除・修正対応）
+    
+    2026/01/20更新: Claude APIを使用した実際のフロー生成を実装
+    リアルタイムフロー生成機能用のエンドポイント。
+    既存のフローに対して、新しい発言内容を反映してフローを更新します。
+    """
+    try:
+        # プロジェクトの存在確認
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project with id {project_id} not found"
+            )
+        
+        logger.info(f"Generating incremental flow for project {project_id}")
+        logger.info(f"New text length: {len(request.new_text)} characters")
+        logger.info(f"Context length: {len(request.context)} characters")
+        logger.info(f"Has existing flow: {request.existing_flow is not None}")
+        
+        # 2026/01/20更新: Claude APIを使用して増分フロー生成
+        try:
+            result = await claude_service.generate_incremental_flow(
+                current_flow=request.existing_flow,
+                new_text=request.new_text,
+                full_context=request.context
+            )
+            
+            logger.info(f"Claude API successfully generated flow")
+            logger.info(f"Operations: {len(result.get('operations', []))}")
+            logger.info(f"Reason: {result.get('reason', 'N/A')}")
+            
+            # レスポンスを返す
+            return {
+                "flow": result["flow"],
+                "operations": result.get("operations", []),
+                "reason": result.get("reason", "フローを生成しました")
+            }
+            
+        except Exception as e:
+            logger.error(f"Claude API error: {str(e)}")
+            # Claude API失敗時は詳細なエラーメッセージを返す
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Claude API呼び出しに失敗しました: {str(e)}"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error generating incremental flow for project {project_id}: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate incremental flow"
+        )

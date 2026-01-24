@@ -24,6 +24,8 @@ const API_BASE_URL = config.apiUrl;
 console.log(`[DEBUG] API_BASE_URL configured as: ${API_BASE_URL}`);
 const DEFAULT_TIMEOUT = 5000; // 5 seconds (短縮してテスト)
 const FLOW_GENERATION_TIMEOUT = 90000; // 90 seconds for AI flow generation
+// 2026/01/20追加: 増分フロー生成用のタイムアウト（Claude API応答時間を考慮）
+const INCREMENTAL_FLOW_TIMEOUT = 60000; // 60 seconds for incremental flow generation
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
@@ -422,6 +424,33 @@ export const hearingApi = {
       throw ApiClientError.fromNetworkError(error as Error);
     }
   },
+    // ============================================
+  // リアルタイム生成用: 増分フロー生成API
+  // ============================================
+  /**
+   * 増分フロー生成（リアルタイムフロー生成用）
+   * 2026/01/20更新: Claude API応答時間を考慮してタイムアウトを60秒に設定
+   */
+  async generateIncrementalFlow(
+    projectId: number,
+    existingFlow: any,
+    newText: string,
+    context: string
+  ): Promise<{operations: any[], reason: string, flow: any}> {
+    return makeRequestWithFeedback<{operations: any[], reason: string, flow: any}>(
+      `/api/projects/${projectId}/hearing/flow/incremental`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          existing_flow: existingFlow,
+          new_text: newText,
+          context: context
+        }),
+      },
+      'Generating incremental flow',
+      INCREMENTAL_FLOW_TIMEOUT  // 60秒のタイムアウトを指定
+    );
+  },
 };
 
 // Flow API functions
@@ -479,6 +508,43 @@ export const flowApi = {
       method: 'PUT',
       body: JSON.stringify(reorderRequest),
     }, 'Reordering flow nodes');
+  },
+
+  /**
+   * Save edited flow
+   */
+  async saveEditedFlow(projectId: number, flowData: any): Promise<any> {
+    return makeRequestWithFeedback<any>(`/api/projects/${projectId}/flow`, {
+      method: 'PUT',
+      body: JSON.stringify(flowData),
+    }, 'Saving edited flow');
+  },
+
+  /**
+   * Get complete flow with edges
+   */
+  async getCompleteFlow(projectId: number): Promise<{ flow_nodes: FlowNodeResponse[], edges: any[] }> {
+    return makeRequestWithFeedback<{ flow_nodes: FlowNodeResponse[], edges: any[] }>(`/api/projects/${projectId}/flow/complete`, {}, 'Loading complete flow');
+  },
+
+  /**
+   * Save flow edges (manual edits)
+   */
+  async saveFlow(projectId: number, edges: any[]): Promise<any> {
+    return makeRequestWithFeedback<any>(`/api/projects/${projectId}/flow/save`, {
+      method: 'POST',
+      body: JSON.stringify({ edges }),
+    }, 'Saving flow');
+  },
+
+  /**
+   * Save flow nodes (batch save)
+   */
+  async saveFlowNodes(projectId: number, nodes: any[]): Promise<any> {
+    return makeRequestWithFeedback<any>(`/api/projects/${projectId}/flow/nodes/save`, {
+      method: 'POST',
+      body: JSON.stringify(nodes),
+    }, 'Saving flow nodes');
   },
 };
 

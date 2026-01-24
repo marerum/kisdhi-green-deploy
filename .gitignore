@@ -28,6 +28,18 @@ logs/
 *.tmp
 *.temp
 
+# Test and debug files
+test-*.html
+test-*.js
+debug-*.html
+*.backup
+*.bak
+*.old
+check_tables.py
+
+# Hypothesis testing cache
+.hypothesis/
+
 # Build artifacts
 dist/
 build/

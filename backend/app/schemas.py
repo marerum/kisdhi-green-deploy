@@ -98,6 +98,8 @@ class FlowNodeResponse(BaseModel):
     order: int
     actor: Optional[str] = None
     step: Optional[str] = None
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
     created_at: datetime
     updated_at: datetime
 
@@ -117,11 +119,33 @@ class StepSchema(BaseModel):
     description: str = Field(..., description="Step description")
 
 
+class FlowEdgeCreate(BaseModel):
+    """Schema for creating a new flow edge."""
+    from_node_order: int = Field(..., description="Source node order number")
+    to_node_order: int = Field(..., description="Target node order number")
+    condition: Optional[str] = Field(None, description="Condition label for branching")
+
+
+class FlowEdgeResponse(BaseModel):
+    """Schema for flow edge response data."""
+    id: int
+    project_id: int
+    from_node_order: int
+    to_node_order: int
+    condition: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class FlowGenerationResponse(BaseModel):
     """Schema for complete flow generation response."""
     actors: List[ActorSchema] = Field(..., description="List of actors/roles")
     steps: List[StepSchema] = Field(..., description="List of steps")
     flow_nodes: List[FlowNodeResponse] = Field(..., description="List of flow nodes")
+    edges: Optional[List[FlowEdgeResponse]] = Field(default=[], description="List of flow edges")
 
 
 class FlowReorderRequest(BaseModel):
@@ -133,10 +157,19 @@ class FlowReorderRequest(BaseModel):
     )
 
 
+class FlowSaveRequest(BaseModel):
+    """Schema for saving complete flow with edges."""
+    edges: List[FlowEdgeCreate] = Field(
+        default=[],
+        description="List of flow edges to save"
+    )
+
+
 class ProjectWithDetails(ProjectResponse):
     """Schema for project with related hearing logs and flow nodes."""
     hearing_logs: List[HearingLogResponse] = []
     flow_nodes: List[FlowNodeResponse] = []
+    flow_edges: List[FlowEdgeResponse] = []
 
     class Config:
         from_attributes = True

@@ -8,8 +8,12 @@ from typing import List
 import logging
 
 from ..database import get_db
-from ..models import Project, HearingLog, FlowNode
-from ..schemas import FlowNodeResponse, FlowNodeCreate, FlowNodeUpdate, FlowReorderRequest, FlowGenerationResponse
+from ..models import Project, HearingLog, FlowNode, FlowEdge
+from ..schemas import (
+    FlowNodeResponse, FlowNodeCreate, FlowNodeUpdate, 
+    FlowReorderRequest, FlowGenerationResponse, FlowEdgeResponse,
+    FlowSaveRequest
+)
 from typing import Dict, Any, Optional
 from ..services.ai import ai_service
 
@@ -83,7 +87,8 @@ async def generate_flow(
         # Generate flow using AI service
         flow_data = await ai_service.generate_business_flow(hearing_content)
         
-        # Clear existing flow nodes for this project
+        # Clear existing flow nodes and edges for this project
+        db.query(FlowEdge).filter(FlowEdge.project_id == project_id).delete()
         db.query(FlowNode).filter(FlowNode.project_id == project_id).delete()
         
         # Create new flow nodes from AI response
@@ -94,25 +99,45 @@ async def generate_flow(
                 text=node_data["text"],
                 order=node_data["order"],
                 actor=node_data.get("actor"),
-                step=node_data.get("step")
+                step=node_data.get("step"),
+                position_x=node_data.get("position_x"),
+                position_y=node_data.get("position_y")
             )
             db.add(flow_node)
             created_nodes.append(flow_node)
         
-        # Commit the transaction
+        # Commit the transaction to get node IDs
         db.commit()
         
         # Refresh nodes to get IDs and timestamps
         for node in created_nodes:
             db.refresh(node)
         
-        logger.info(f"Generated {len(created_nodes)} flow nodes for project {project_id}")
+        # Create flow edges from AI response if provided
+        created_edges = []
+        if "edges" in flow_data and flow_data["edges"]:
+            for edge_data in flow_data["edges"]:
+                flow_edge = FlowEdge(
+                    project_id=project_id,
+                    from_node_order=edge_data["from_order"],
+                    to_node_order=edge_data["to_order"],
+                    condition=edge_data.get("condition")
+                )
+                db.add(flow_edge)
+                created_edges.append(flow_edge)
+            
+            db.commit()
+            for edge in created_edges:
+                db.refresh(edge)
+        
+        logger.info(f"Generated {len(created_nodes)} flow nodes and {len(created_edges)} edges for project {project_id}")
         
         # Return the complete flow data
         return {
             "actors": flow_data["actors"],
             "steps": flow_data["steps"],
-            "flow_nodes": created_nodes
+            "flow_nodes": created_nodes,
+            "edges": created_edges
         }
         
     except ValueError as e:
@@ -168,6 +193,48 @@ async def get_flow_nodes(
     ).order_by(FlowNode.order).all()
     
     return flow_nodes
+
+
+@router.get("/projects/{project_id}/flow/complete")
+async def get_complete_flow(
+    project_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get complete flow data including nodes and edges for a project.
+    
+    Args:
+        project_id: ID of the project
+        db: Database session
+        
+    Returns:
+        Complete flow data with nodes and edges
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    
+    # Get flow nodes for the project
+    flow_nodes = db.query(FlowNode).filter(
+        FlowNode.project_id == project_id
+    ).order_by(FlowNode.order).all()
+    
+    # Get flow edges for the project
+    flow_edges = db.query(FlowEdge).filter(
+        FlowEdge.project_id == project_id
+    ).order_by(FlowEdge.from_node_order, FlowEdge.to_node_order).all()
+    
+    return {
+        "flow_nodes": flow_nodes,
+        "edges": flow_edges
+    }
 
 
 @router.put("/flow/nodes/{node_id}", response_model=FlowNodeResponse)
@@ -274,6 +341,131 @@ async def create_flow_node(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create flow node"
+        )
+
+
+@router.post("/projects/{project_id}/flow/save")
+async def save_flow(
+    project_id: int,
+    flow_save_request: FlowSaveRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Save flow edges for a project (preserving manual edits).
+    
+    Args:
+        project_id: ID of the project
+        flow_save_request: Flow data including edges
+        db: Database session
+        
+    Returns:
+        Success message with saved edges count
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    
+    try:
+        # Clear existing edges for this project
+        db.query(FlowEdge).filter(FlowEdge.project_id == project_id).delete()
+        
+        # Create new edges
+        created_edges = []
+        for edge_data in flow_save_request.edges:
+            flow_edge = FlowEdge(
+                project_id=project_id,
+                from_node_order=edge_data.from_node_order,
+                to_node_order=edge_data.to_node_order,
+                condition=edge_data.condition
+            )
+            db.add(flow_edge)
+            created_edges.append(flow_edge)
+        
+        db.commit()
+        
+        logger.info(f"Saved {len(created_edges)} edges for project {project_id}")
+        return {
+            "message": "Flow saved successfully",
+            "edges_count": len(created_edges)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving flow for project {project_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save flow"
+        )
+
+
+@router.post("/projects/{project_id}/flow/nodes/save")
+async def save_flow_nodes(
+    project_id: int,
+    nodes_data: List[dict],
+    db: Session = Depends(get_db)
+):
+    """
+    Save flow nodes for a project (batch save).
+    
+    Args:
+        project_id: ID of the project
+        nodes_data: List of node dictionaries with text, order, actor, step, position_x, position_y
+        db: Database session
+        
+    Returns:
+        Success message with saved nodes count
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project with id {project_id} not found"
+        )
+    
+    try:
+        # Clear existing nodes for this project
+        db.query(FlowNode).filter(FlowNode.project_id == project_id).delete()
+        
+        # Create new nodes
+        created_nodes = []
+        for node_data in nodes_data:
+            flow_node = FlowNode(
+                project_id=project_id,
+                text=node_data.get('text', ''),
+                order=node_data.get('order', 0),
+                actor=node_data.get('actor', ''),
+                step=node_data.get('step', ''),
+                position_x=node_data.get('position_x', 0),
+                position_y=node_data.get('position_y', 0)
+            )
+            db.add(flow_node)
+            created_nodes.append(flow_node)
+        
+        db.commit()
+        
+        logger.info(f"Saved {len(created_nodes)} nodes for project {project_id}")
+        return {
+            "message": "Flow nodes saved successfully",
+            "nodes_count": len(created_nodes)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error saving flow nodes for project {project_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save flow nodes"
         )
 
 
@@ -494,4 +686,100 @@ async def undo_flow_operation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to undo operation"
+        )
+
+
+@router.put("/projects/{project_id}/flow")
+async def save_edited_flow(
+    project_id: int,
+    flow_data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """
+    Save edited flow data for a project.
+    Replaces existing flow nodes with the edited version.
+    
+    Args:
+        project_id: ID of the project
+        flow_data: Edited flow data including actors, steps, flow_nodes, and edges
+        db: Database session
+        
+    Returns:
+        Success message with saved flow data
+        
+    Raises:
+        HTTPException: If project not found or save fails
+    """
+    try:
+        # Verify project exists
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Project with id {project_id} not found"
+            )
+        
+        # Validate flow_data structure
+        if "flow_nodes" not in flow_data or not isinstance(flow_data["flow_nodes"], list):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid flow data: 'flow_nodes' is required and must be a list"
+            )
+        
+        # Clear existing flow nodes for this project
+        db.query(FlowNode).filter(FlowNode.project_id == project_id).delete()
+        
+        # Create new flow nodes from edited data
+        created_nodes = []
+        for node_data in flow_data["flow_nodes"]:
+            flow_node = FlowNode(
+                project_id=project_id,
+                text=node_data.get("text", ""),
+                order=node_data.get("order", 0),
+                actor=node_data.get("actor"),
+                step=node_data.get("step"),
+                position_x=node_data.get("position_x"),
+                position_y=node_data.get("position_y")
+            )
+            db.add(flow_node)
+            created_nodes.append(flow_node)
+        
+        # Commit the transaction
+        db.commit()
+        
+        # Refresh nodes to get IDs and timestamps
+        for node in created_nodes:
+            db.refresh(node)
+        
+        logger.info(f"Saved {len(created_nodes)} edited flow nodes for project {project_id}")
+        
+        # Return success with saved data
+        return {
+            "message": "Flow saved successfully",
+            "project_id": project_id,
+            "nodes_count": len(created_nodes),
+            "flow": {
+                "actors": flow_data.get("actors", []),
+                "steps": flow_data.get("steps", []),
+                "flow_nodes": [
+                    {
+                        "id": node.id,
+                        "text": node.text,
+                        "order": node.order,
+                        "actor": node.actor,
+                        "step": node.step
+                    }
+                    for node in created_nodes
+                ]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving edited flow for project {project_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save edited flow: {str(e)}"
         )

@@ -60,10 +60,32 @@ declare var SpeechRecognition: {
   new(): SpeechRecognition;
 };
 
+// ============================================
+// リアルタイム生成用: 型定義
+// ============================================
+type TriggerMode = 'auto' | 'manual';
+type AutoTriggerTimeout = 2000 | 3000 | 4000 | 5000 | 6000 | 7000 | 8000 | 9000 | 10000;
+type AutoStopTimeout = null | 60000; // null = 停止無し, 60000 = 1分で停止
+
+interface TriggerSettings {
+  mode: TriggerMode;
+  timeout: AutoTriggerTimeout | null;
+}
+
+const DEFAULT_TRIGGER_SETTINGS: TriggerSettings = {
+  mode: 'auto',
+  timeout: 3000
+};
+
+const MIN_TEXT_LENGTH = 20;
+// ============================================
+  
 interface HearingInputProps {
   projectId: number;
   onHearingLogAdded?: (hearingLog: HearingLogResponse) => void;
   onHearingLogUpdated?: (hearingLog: HearingLogResponse) => void;
+  // リアルタイムフロー生成: 親コンポーネントにフロー更新を通知するためのコールバック
+  onFlowUpdated?: (flow: any) => void;
   editingLog?: HearingLogResponse | null;
   onCancelEdit?: () => void;
 }
@@ -72,6 +94,7 @@ export function HearingInput({
   projectId, 
   onHearingLogAdded, 
   onHearingLogUpdated,
+  onFlowUpdated,  // リアルタイムフロー生成: フロー更新用コールバック
   editingLog,
   onCancelEdit
 }: HearingInputProps) {
@@ -84,10 +107,28 @@ export function HearingInput({
 
   // Real-time speech recognition states
   const [isRealtimeListening, setIsRealtimeListening] = useState(false);
+  const isRealtimeListeningRef = useRef<boolean>(false); // refでも管理（クロージャ問題対策）
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const baseContentRef = useRef<string>(''); // Content before starting real-time recognition
 
+  // ============================================
+  // リアルタイム生成用: 状態管理
+  // ============================================
+  const [triggerSettings, setTriggerSettings] = useState<TriggerSettings>(DEFAULT_TRIGGER_SETTINGS);
+  const [pendingText, setPendingText] = useState('');
+  const [currentFlow, setCurrentFlow] = useState<any>(null);
+  const [isGeneratingFlow, setIsGeneratingFlow] = useState(false);
+  const lastUpdateTimeRef = useRef<number>(Date.now());
+  const triggerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 最後にフロー生成した時点のcontentの長さ（これ以降がpendingText）
+  const lastFlowGenerationPositionRef = useRef<number>(0);
+  // 音声入力自動停止設定
+  const [autoStopTimeout, setAutoStopTimeout] = useState<AutoStopTimeout>(null);
+  const lastSpeechTimeRef = useRef<number>(Date.now());
+  // 音声入力中のヒアリングログ自動保存用
+  const currentHearingLogIdRef = useRef<number | null>(null);
+  // ============================================
   
   useEffect(() => {
     if (editingLog) setContent(editingLog.content);
@@ -99,25 +140,186 @@ export function HearingInput({
     // No longer needed since we removed realtime functionality
   }, [content]);
 
-  // Cleanup on unmount only (no dependencies to prevent premature cleanup)
+    // Cleanup on unmount only (no dependencies to prevent premature cleanup)
   useEffect(() => {
     return () => {
-      console.log('=== Component cleanup triggered ===');
       // Stop real-time recognition
       if (recognitionRef.current) {
-        console.log('Stopping real-time recognition');
         recognitionRef.current.stop();
       }
-      console.log('=== Component cleanup completed ===');
+      // リアルタイム生成用: タイマーのクリーンアップ
+      if (triggerTimeoutRef.current) {
+        clearTimeout(triggerTimeoutRef.current);
+      }
     };
   }, []); // Empty dependency array - cleanup only on unmount
 
+  // ============================================
+  // リアルタイム生成用: 音声認識結果の監視
+  // ============================================
+  useEffect(() => {
+    if (!isRealtimeListening) return;
+
+    // 最後のフロー生成位置以降がpendingText
+    const newContent = content.substring(lastFlowGenerationPositionRef.current);
+    if (newContent) {
+      setPendingText(newContent);
+      lastUpdateTimeRef.current = Date.now();
+
+      console.log('=== Flow Generation Trigger Check ===');
+      console.log('Trigger mode:', triggerSettings.mode);
+      console.log('Trigger timeout:', triggerSettings.timeout);
+      console.log('New content:', newContent);
+      console.log('Pending text length:', newContent.length);
+      console.log('Min required length:', MIN_TEXT_LENGTH);
+
+      // タイマーをクリア
+      if (triggerTimeoutRef.current) {
+        clearTimeout(triggerTimeoutRef.current);
+      }
+
+      // 自動モードの場合、タイムアウト後にフロー生成
+      if (triggerSettings.mode === 'auto' && triggerSettings.timeout) {
+        const timeoutMs = triggerSettings.timeout;
+        
+        console.log(`Setting flow generation timer for ${timeoutMs}ms`);
+        
+        triggerTimeoutRef.current = setTimeout(() => {
+          const timeSinceUpdate = Date.now() - lastUpdateTimeRef.current;
+          const currentPendingText = content.substring(lastFlowGenerationPositionRef.current);
+          
+          console.log('=== Flow Generation Timer Fired ===');
+          console.log('Time since update:', timeSinceUpdate);
+          console.log('Current pending text:', currentPendingText);
+          console.log('Current pending text length:', currentPendingText.length);
+          console.log('Condition met:', timeSinceUpdate >= timeoutMs && currentPendingText.length >= MIN_TEXT_LENGTH);
+          
+          if (timeSinceUpdate >= timeoutMs && currentPendingText.length >= MIN_TEXT_LENGTH) {
+            console.log('Calling handleIncrementalFlowGeneration');
+            handleIncrementalFlowGeneration();
+          } else {
+            console.log('Flow generation conditions not met');
+          }
+        }, timeoutMs);
+      }
+    }
+  }, [content, isRealtimeListening, triggerSettings.mode, triggerSettings.timeout]); // pendingTextを削除
+  // ============================================
+
   const isEditing = !!editingLog;
+
+  // ============================================
+  // ヒアリングログ自動保存処理
+  // ============================================
+  const autoSaveHearingLog = async (textToSave: string, finalize: boolean = false) => {
+    const contentToSave = textToSave.trim();
+    
+    if (!contentToSave) return;
+    
+    try {
+      const logId = currentHearingLogIdRef.current;
+      if (logId) {
+        // 既存のログを更新
+        const updated = await hearingApi.updateHearingLog(logId, { content: contentToSave });
+        
+        if (finalize) {
+          // フロー生成後の確定保存の場合、親コンポーネントに通知
+          onHearingLogUpdated?.(updated);
+          // 次の発言用にリセット
+          currentHearingLogIdRef.current = null;
+        }
+      } else {
+        // 新規作成（初めての音声認識またはフロー生成後の次の発言時）
+        const created = await hearingApi.addHearingLog(projectId, { content: contentToSave });
+        currentHearingLogIdRef.current = created.id;
+        
+        if (finalize) {
+          // 確定保存の場合のみ親コンポーネントに通知
+          onHearingLogAdded?.(created);
+          // 次の発言用にリセット
+          currentHearingLogIdRef.current = null;
+        }
+      }
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      // エラーは控えめに（ユーザーには見せない）
+    }
+  };
+  // ============================================
+
+    // ============================================
+  // リアルタイム生成用: 増分フロー生成処理
+  // ============================================
+  const handleIncrementalFlowGeneration = async () => {
+    if (!pendingText.trim() || isGeneratingFlow) return;
+
+    setIsGeneratingFlow(true);
+    try {
+      // リアルタイム生成用: API呼び出しを実装
+      const response = await hearingApi.generateIncrementalFlow(
+        projectId,
+        currentFlow,
+        pendingText,
+        content
+      );
+      
+      // フローを更新
+      setCurrentFlow(response.flow);
+      // リアルタイムフロー生成: 親コンポーネント（page.tsx）にフロー更新を通知
+      // これによりFlowPreviewコンポーネントがリアルタイムで更新される
+      onFlowUpdated?.(response.flow);
+      
+      // フロー生成成功後、現在のpendingTextをヒアリングログとして確定保存
+      // finalize=trueで呼び出し、pendingTextのみを保存してログを確定
+      await autoSaveHearingLog(pendingText, true);
+      
+      // 成功したら pendingText をクリアし、次の発言を新規ログとして記録するための準備
+      setPendingText('');
+      setContent('');
+      baseContentRef.current = '';
+      lastFlowGenerationPositionRef.current = 0;
+      
+      // 音声認識が停止している場合は再起動
+      if (isRealtimeListeningRef.current && !recognitionRef.current) {
+        // 少し待ってから再起動
+        setTimeout(() => {
+          if (isRealtimeListeningRef.current) {
+            startRealtimeListening();
+          }
+        }, 500);
+      }
+      
+    } catch (error) {
+      console.error('Flow generation failed:', error);
+      setError('フロー生成に失敗しました');
+    } finally {
+      setIsGeneratingFlow(false);
+    }
+  };
+
+  // リアルタイム生成用: 手動フロー生成ボタンのハンドラ
+  const handleManualFlowGeneration = () => {
+    if (triggerSettings.mode === 'manual' && pendingText.trim()) {
+      handleIncrementalFlowGeneration();
+    }
+  };
+  // ============================================
 
   const startRealtimeListening = async () => {
     try {
       setError(null);
-      console.log('=== 音声入力開始 ===');
+      
+      // 既に音声認識が実行中の場合は何もしない
+      if (recognitionRef.current || isRealtimeListeningRef.current) {
+        console.log('Speech recognition already running, skipping start');
+        return;
+      }
+      
+      // 編集モードの場合は既存のIDを使用
+      if (editingLog) {
+        currentHearingLogIdRef.current = editingLog.id;
+      }
+      // 新規作成の場合は、音声が認識されたときにログを作成する（プレースホルダーは作成しない）
       
       // Check if Web Speech API is supported
       const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -133,10 +335,12 @@ export function HearingInput({
       
       // Store the current content as base content
       baseContentRef.current = content;
+      // リアルタイムフロー生成: 開始時のフロー生成位置を設定
+      lastFlowGenerationPositionRef.current = content.length;
+      // 音声入力自動停止: 最後の音声時間を初期化
+      lastSpeechTimeRef.current = Date.now();
       
       recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-        console.log('Speech recognition result received');
-        
         let finalTranscript = '';
         let interimTranscript = '';
         
@@ -156,95 +360,122 @@ export function HearingInput({
         setContent(newContent);
         
         // Update base content when we get final results
+        // This ensures the next finalTranscript will be appended, not overwrite
         if (finalTranscript) {
           baseContentRef.current = baseContentRef.current + finalTranscript;
-          console.log('Added final transcript to base:', finalTranscript);
+          // 音声入力自動停止: 音声を検出したので時間を更新
+          lastSpeechTimeRef.current = Date.now();
         }
-        
-        console.log('Content updated:', newContent.length, 'characters');
-        console.log('Final transcript:', finalTranscript);
-        console.log('Interim transcript:', interimTranscript);
       };
       
       recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('Speech recognition error:', event.error);
         if (event.error === 'not-allowed') {
           setError('マイクへのアクセスが拒否されました。ブラウザの設定でマイクの使用を許可してください。');
-          setIsRealtimeListening(false);
+          stopRealtimeListening();
         } else if (event.error === 'no-speech') {
+          // 自動停止設定をチェック
+          if (autoStopTimeout !== null) {
+            const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
+            if (timeSinceLastSpeech >= autoStopTimeout) {
+              console.log(`No speech for ${autoStopTimeout / 1000} seconds, stopping automatically...`);
+              stopRealtimeListening();
+              return;
+            }
+          }
           console.log('No speech detected, continuing...');
         } else if (event.error === 'network') {
           console.log('Network error, continuing...');
+        } else if (event.error === 'aborted') {
+          // abortedは通常HMRや一時的な中断で発生するので、継続を試みる
+          console.log('Speech recognition aborted (possibly due to hot reload), will retry...');
         } else {
           console.log(`Non-critical error: ${event.error}, continuing...`);
         }
       };
       
       recognitionInstance.onstart = () => {
-        console.log('Real-time speech recognition started');
         setIsRealtimeListening(true);
+        isRealtimeListeningRef.current = true;
       };
       
       recognitionInstance.onend = () => {
-        console.log('Speech recognition ended');
-        // Only restart if we're still supposed to be listening and recognition was not manually stopped
-        if (isRealtimeListening && recognitionRef.current) {
-          console.log('Restarting speech recognition...');
+        console.log('Speech recognition ended, isRealtimeListeningRef:', isRealtimeListeningRef.current);
+        // Only restart if we're still supposed to be listening
+        if (isRealtimeListeningRef.current) {
           setTimeout(() => {
-            if (isRealtimeListening && recognitionRef.current) {
+            if (isRealtimeListeningRef.current && recognitionRef.current) {
               try {
+                console.log('Attempting to restart speech recognition...');
                 recognitionRef.current.start();
-                console.log('Recognition restarted successfully');
               } catch (error) {
                 console.error('Failed to restart recognition:', error);
                 // If restart fails, stop the real-time listening
                 setIsRealtimeListening(false);
+                isRealtimeListeningRef.current = false;
+                recognitionRef.current = null;
               }
             }
           }, 100);
+        } else {
+          console.log('Not restarting speech recognition (flag is false)');
         }
       };
       
-      console.log('Starting real-time speech recognition...');
-      recognitionInstance.start();
+      // 参照を先に設定してから start を呼ぶ
       setRecognition(recognitionInstance);
       recognitionRef.current = recognitionInstance;
       
-      console.log('音声入力開始完了');
+      // フラグを先に設定（start()が呼ばれる前に）
+      isRealtimeListeningRef.current = true;
+      
+      // start() を呼ぶ
+      try {
+        recognitionInstance.start();
+        console.log('Speech recognition started successfully');
+      } catch (startError) {
+        console.error('Failed to start recognition:', startError);
+        // 失敗した場合は参照とフラグをクリア
+        setRecognition(null);
+        recognitionRef.current = null;
+        isRealtimeListeningRef.current = false;
+        throw startError;
+      }
       
     } catch (err) {
       console.error('Failed to start real-time listening:', err);
       setError('音声入力の開始に失敗しました。');
+      setIsRealtimeListening(false);
+      isRealtimeListeningRef.current = false;
     }
   };
 
-  const stopRealtimeListening = () => {
-    console.log('=== 音声入力停止 ===');
+  const stopRealtimeListening = async () => {
+    console.log('Stopping real-time listening...');
     
     // First set the flag to false to prevent restart
+    isRealtimeListeningRef.current = false;
     setIsRealtimeListening(false);
     
-    // Stop the recognition instance
-    if (recognition) {
+    // 音声入力停止時に最終保存（pendingテキストがあれば）
+    if (content.trim() && currentHearingLogIdRef.current) {
+      await autoSaveHearingLog(content, false);
+    }
+    
+    // Stop and clean up recognition instance
+    const currentRecognition = recognitionRef.current || recognition;
+    if (currentRecognition) {
       try {
-        recognition.stop();
+        currentRecognition.stop();
+        console.log('Speech recognition stopped');
       } catch (error) {
         console.error('Error stopping recognition:', error);
       }
-      setRecognition(null);
     }
     
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (error) {
-        console.error('Error stopping recognition ref:', error);
-      }
-      recognitionRef.current = null;
-    }
-    
-    // Keep the final content as is - baseContentRef.current already contains the final content
-    console.log('音声入力停止完了');
+    // Clear all references
+    setRecognition(null);
+    recognitionRef.current = null;
   };
 
   const handleSave = async () => {
@@ -259,9 +490,18 @@ export function HearingInput({
         onHearingLogUpdated?.(updated);
         onCancelEdit?.();
       } else {
-        const created = await hearingApi.addHearingLog(projectId, { content: content.trim() });
-        onHearingLogAdded?.(created);
+        // 新規作成の場合
+        if (currentHearingLogIdRef.current) {
+          // 既に自動保存で作成済みの場合は更新
+          const updated = await hearingApi.updateHearingLog(currentHearingLogIdRef.current, { content: content.trim() });
+          onHearingLogAdded?.(updated);
+        } else {
+          // 自動保存なしで手動保存の場合は新規作成
+          const created = await hearingApi.addHearingLog(projectId, { content: content.trim() });
+          onHearingLogAdded?.(created);
+        }
         setContent('');
+        currentHearingLogIdRef.current = null; // リセット
       }
     } catch (e) {
       console.error(e);
@@ -278,6 +518,104 @@ export function HearingInput({
 
   return (
     <div className="space-y-4">
+      {/* ============================================ */}
+      {/* リアルタイム生成用: トリガー設定UI */}
+      {/* ============================================ */}
+      <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+        <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+          <span className="mr-2">⚡</span>
+          リアルタイムフロー生成設定
+        </h3>
+        
+        <div className="space-y-3">
+          <div className="flex items-center space-x-4">
+            <label className="text-sm text-gray-600 font-medium">生成タイミング:</label>
+            <select 
+              value={triggerSettings.mode}
+              onChange={(e) => setTriggerSettings({
+                ...triggerSettings,
+                mode: e.target.value as TriggerMode
+              })}
+              className="px-3 py-1.5 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
+            >
+              <option value="auto">自動生成</option>
+              <option value="manual">手動生成（ボタン押下）</option>
+            </select>
+          </div>
+
+          {triggerSettings.mode === 'auto' && (
+            <div className="flex items-center space-x-4">
+              <label className="text-sm text-gray-600 font-medium">タイムアウト:</label>
+              <select
+                value={triggerSettings.timeout || ''}
+                onChange={(e) => setTriggerSettings({
+                  ...triggerSettings,
+                  timeout: parseInt(e.target.value) as AutoTriggerTimeout
+                })}
+                className="px-3 py-1.5 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
+              >
+                <option value="2000">2秒</option>
+                <option value="3000">3秒（推奨）</option>
+                <option value="4000">4秒</option>
+                <option value="5000">5秒</option>
+                <option value="6000">6秒</option>
+                <option value="7000">7秒</option>
+                <option value="8000">8秒</option>
+                <option value="9000">9秒</option>
+                <option value="10000">10秒</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center space-x-4">
+            <label className="text-sm text-gray-600 font-medium">音声入力自動停止:</label>
+            <select
+              value={autoStopTimeout === null ? 'none' : String(autoStopTimeout)}
+              onChange={(e) => setAutoStopTimeout(
+                e.target.value === 'none' ? null : parseInt(e.target.value) as AutoStopTimeout
+              )}
+              className="px-3 py-1.5 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
+            >
+              <option value="none">停止無し</option>
+              <option value="60000">1分で停止</option>
+            </select>
+          </div>
+
+          {/* リアルタイム生成用: 手動モード時のボタン */}
+          {triggerSettings.mode === 'manual' && (
+            <button
+              onClick={handleManualFlowGeneration}
+              disabled={!pendingText.trim() || isGeneratingFlow}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isGeneratingFlow ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  フロー生成中...
+                </>
+              ) : (
+                <>
+                  <span className="mr-2">📊</span>
+                  フローを生成
+                </>
+              )}
+            </button>
+          )}
+
+          {/* リアルタイム生成用: 生成中インジケーター */}
+          {isGeneratingFlow && (
+            <div className="flex items-center space-x-2 text-green-700 bg-green-100 px-3 py-2 rounded-md">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium">フローを生成中...</span>
+            </div>
+          )}
+        </div>
+      </div>
+      {/* ============================================ */}
+
       <div>
         <label htmlFor="hearing-input" className="block text-sm font-medium text-gray-700 mb-2">
           {isEditing ? 'ヒアリング内容を編集' : '新しいヒアリング内容'}
@@ -360,6 +698,27 @@ export function HearingInput({
           placeholder="ヒアリング内容を入力してください（音声入力ボタンで音声からの文字起こしも可能です）"
           disabled={isTranscribing || isRealtimeListening}
         />
+        
+        {/* ============================================ */}
+        {/* リアルタイム生成用: 未処理テキストの表示 */}
+        {/* ============================================ */}
+        {pendingText && (
+          <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
+            <div className="flex items-start">
+              <span className="text-yellow-600 mr-2">📝</span>
+              <div className="flex-1">
+                <p className="text-xs font-medium text-yellow-800 mb-1">
+                  フロー生成待ちのテキスト:
+                </p>
+                <p className="text-sm text-gray-700 font-medium leading-relaxed">
+                  {pendingText}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ============================================ */}
+
       </div>
 
       {error && (

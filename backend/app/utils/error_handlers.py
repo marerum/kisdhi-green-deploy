@@ -175,7 +175,8 @@ def handle_database_errors(operation_name: str = "database operation"):
                 )
         
         # Return appropriate wrapper based on function type
-        if hasattr(func, '__code__') and 'async' in str(func.__code__.co_flags):
+        import inspect
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper

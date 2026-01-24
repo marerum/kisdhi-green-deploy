@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 from .database import init_db, close_db, test_db_connection
 from .config import settings
 from .routers import projects, hearing, flow
-from .services.ai import ai_service
+# 2026/01/20更新: ClaudeServiceを追加インポート
+from .services.ai import ai_service, claude_service
 from .exceptions import BusinessFlowException, create_http_exception, get_user_friendly_message
 
 # Load environment variables
@@ -42,9 +43,20 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database initialized successfully")
         
-        # Initialize AI service
-        await ai_service.initialize()
-        logger.info("AI service initialized successfully")
+        # Initialize AI service (OpenAI - optional)
+        try:
+            await ai_service.initialize()
+            logger.info("AI service initialized successfully")
+        except Exception as e:
+            logger.warning(f"AI service initialization failed (non-critical): {str(e)}")
+        
+        # 2026/01/20追加: Initialize Claude service (primary for real-time flow generation)
+        try:
+            await claude_service.initialize()
+            logger.info("Claude service initialized successfully")
+        except Exception as e:
+            logger.warning(f"Claude service initialization failed: {str(e)}")
+            logger.warning("Real-time flow generation features will not work without Claude API")
         
     except Exception as e:
         logger.error(f"Failed to start application: {str(e)}")
