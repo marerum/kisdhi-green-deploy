@@ -55,6 +55,8 @@ export interface FlowNodeResponse {
   order: number;
   actor?: string;
   step?: string;
+  position_x?: number;
+  position_y?: number;
   created_at: string;
   updated_at: string;
 }
