@@ -553,6 +553,7 @@ export const api = {
   projects: projectApi,
   hearing: hearingApi,
   flow: flowApi,
+  auth: undefined as any, // Will be assigned below
 };
 
 // Authentication API functions
