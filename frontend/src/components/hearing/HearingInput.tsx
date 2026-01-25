@@ -2,7 +2,7 @@
  * HearingInput Component
  * Provides a text area interface for inputting hearing content with manual save functionality
  * Supports both creating new logs and editing existing ones
- * Includes voice input functionality using OpenAI Whisper API and real-time Web Speech API
+ * Includes voice input functionality using Azure Speech Service (primary) and Web Speech API (fallback)
  */
 
 'use client';
@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { hearingApi } from '@/lib/api';
 import { HearingLogResponse } from '@/types/api';
+import { useAzureSpeech } from '@/hooks/useAzureSpeech';
 
 // Web Speech API type declarations
 declare global {
@@ -105,7 +106,30 @@ export function HearingInput({
   // Voice input states (only real-time recognition)
   const [isTranscribing, setIsTranscribing] = useState(false);
 
-  // Real-time speech recognition states
+  // Speech recognition provider state ('azure' or 'web')
+  const [speechProvider, setSpeechProvider] = useState<'azure' | 'web'>('azure');
+
+  // Azure Speech Service integration
+  const azureSpeech = useAzureSpeech({
+    language: 'ja-JP',
+    onTranscript: (text, isFinal) => {
+      if (isFinal) {
+        // 確定結果: baseContentに追加
+        baseContentRef.current = baseContentRef.current + text;
+        setContent(baseContentRef.current);
+        lastSpeechTimeRef.current = Date.now();
+      } else {
+        // 中間結果: baseContent + 中間結果を表示
+        setContent(baseContentRef.current + text);
+      }
+    },
+    onError: (error) => {
+      console.error('Azure Speech error:', error);
+      setError(`音声認識エラー: ${error}`);
+    },
+  });
+
+  // Real-time speech recognition states (Web Speech API fallback)
   const [isRealtimeListening, setIsRealtimeListening] = useState(false);
   const isRealtimeListeningRef = useRef<boolean>(false); // refでも管理（クロージャ問題対策）
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
@@ -310,7 +334,8 @@ export function HearingInput({
       setError(null);
       
       // 既に音声認識が実行中の場合は何もしない
-      if (recognitionRef.current || isRealtimeListeningRef.current) {
+      if ((speechProvider === 'azure' && azureSpeech.isListening) || 
+          (speechProvider === 'web' && (recognitionRef.current || isRealtimeListeningRef.current))) {
         console.log('Speech recognition already running, skipping start');
         return;
       }
@@ -319,7 +344,26 @@ export function HearingInput({
       if (editingLog) {
         currentHearingLogIdRef.current = editingLog.id;
       }
-      // 新規作成の場合は、音声が認識されたときにログを作成する（プレースホルダーは作成しない）
+      
+      // Store the current content as base content
+      baseContentRef.current = content;
+      // リアルタイムフロー生成: 開始時のフロー生成位置を設定
+      lastFlowGenerationPositionRef.current = content.length;
+      // 音声入力自動停止: 最後の音声時間を初期化
+      lastSpeechTimeRef.current = Date.now();
+      
+      // Azure Speech Service が利用可能な場合はそちらを優先
+      if (azureSpeech.isAvailable && speechProvider === 'azure') {
+        console.log('Starting Azure Speech Service recognition...');
+        azureSpeech.startListening();
+        setIsRealtimeListening(true);
+        isRealtimeListeningRef.current = true;
+        return;
+      }
+      
+      // Fallback to Web Speech API
+      console.log('Falling back to Web Speech API...');
+      setSpeechProvider('web');
       
       // Check if Web Speech API is supported
       const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -332,13 +376,6 @@ export function HearingInput({
       recognitionInstance.continuous = true;
       recognitionInstance.interimResults = true;
       recognitionInstance.lang = 'ja-JP';
-      
-      // Store the current content as base content
-      baseContentRef.current = content;
-      // リアルタイムフロー生成: 開始時のフロー生成位置を設定
-      lastFlowGenerationPositionRef.current = content.length;
-      // 音声入力自動停止: 最後の音声時間を初期化
-      lastSpeechTimeRef.current = Date.now();
       
       recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
@@ -462,12 +499,19 @@ export function HearingInput({
       await autoSaveHearingLog(content, false);
     }
     
-    // Stop and clean up recognition instance
+    // Stop Azure Speech Service if active
+    if (speechProvider === 'azure' && azureSpeech.isListening) {
+      azureSpeech.stopListening();
+      console.log('Azure Speech Service stopped');
+      return;
+    }
+    
+    // Stop Web Speech API if active
     const currentRecognition = recognitionRef.current || recognition;
     if (currentRecognition) {
       try {
         currentRecognition.stop();
-        console.log('Speech recognition stopped');
+        console.log('Web Speech API stopped');
       } catch (error) {
         console.error('Error stopping recognition:', error);
       }
@@ -625,10 +669,46 @@ export function HearingInput({
         <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-700">音声入力</h3>
+            <div className="flex items-center space-x-2">
+              {/* Speech Provider Display */}
+              <span className="text-xs text-gray-500">
+                {speechProvider === 'azure' ? (
+                  azureSpeech.isAvailable ? (
+                    <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Azure Speech
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded">
+                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      Azure 未設定
+                    </span>
+                  )
+                ) : (
+                  <span className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                    Web Speech API
+                  </span>
+                )}
+              </span>
+              {/* Provider Switch Button */}
+              {!isRealtimeListening && (
+                <button
+                  onClick={() => setSpeechProvider(speechProvider === 'azure' ? 'web' : 'azure')}
+                  className="text-xs px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                  title={`${speechProvider === 'azure' ? 'Web Speech API' : 'Azure Speech'}に切り替え`}
+                >
+                  切替
+                </button>
+              )}
+            </div>
           </div>
           
           <div className="flex items-center space-x-3">
-            {!isRealtimeListening ? (
+            {!(isRealtimeListening || azureSpeech.isListening) ? (
                 <button
                   onClick={startRealtimeListening}
                   disabled={isSaving || isTranscribing}
@@ -655,12 +735,20 @@ export function HearingInput({
               </div>
             )}
             
-            {isRealtimeListening && (
+            {(isRealtimeListening || azureSpeech.isListening) && (
               <div className="flex items-center space-x-3">
                 <div className="flex items-center">
                   <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                  <span className="ml-2 text-sm text-blue-600">音声認識中...</span>
+                  <span className="ml-2 text-sm text-blue-600">
+                    {speechProvider === 'azure' ? 'Azure Speech 認識中...' : 'Web Speech 認識中...'}
+                  </span>
                 </div>
+              </div>
+            )}
+            
+            {azureSpeech.error && (
+              <div className="text-sm text-red-600">
+                {azureSpeech.error}
               </div>
             )}
             
