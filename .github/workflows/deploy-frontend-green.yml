@@ -1,0 +1,72 @@
+name: Deploy Frontend to Azure App Service (Green Slot)
+
+on:
+  push:
+    branches: [ feature/realtime-flow-generation_for_deploy ]
+    paths: [ 'frontend/**' ]
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: 'tech0-gen-11-step3-2-node-71'
+  NODE_VERSION: '18'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: frontend
+      run: npm ci
+
+    - name: Build application
+      working-directory: frontend
+      run: npm run build
+      env:
+        NEXT_PUBLIC_API_URL: https://tech0-gen-11-step3-2-py-71-green-kishimen-deploy.azurewebsites.net
+        NEXT_PUBLIC_AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+        NEXT_PUBLIC_AZURE_SPEECH_REGION: eastus
+
+    - name: Prepare standalone deployment package
+      run: |
+        # Copy static files to standalone directory
+        if [ -d "frontend/public" ]; then
+          cp -r frontend/public frontend/.next/standalone/public
+        else
+          echo "public directory does not exist, skipping..."
+        fi
+        cp -r frontend/.next/static frontend/.next/standalone/.next/static
+
+        # Create package.json for standalone mode with correct start command
+        cat > frontend/.next/standalone/package.json << 'EOF'
+        {
+          "name": "ai-business-flow-frontend",
+          "version": "0.1.0",
+          "private": true,
+          "scripts": {
+            "start": "node server.js"
+          }
+        }
+        EOF
+
+        echo "=== Standalone package contents ==="
+        ls -la frontend/.next/standalone/
+        du -sh frontend/.next/standalone/
+
+    - name: Deploy to Azure Web App (Green Slot)
+      uses: azure/webapps-deploy@v2
+      id: deploy-to-webapp
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        slot-name: 'green-kishimen-deploy'
+        publish-profile: ${{ secrets.GREEN_TECH0_GEN_11_STEP3_2_NODE_71 }}
+        package: frontend/.next/standalone
