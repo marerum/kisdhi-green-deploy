@@ -66,6 +66,7 @@ jobs:
       uses: azure/webapps-deploy@v2
       id: deploy-to-webapp
       with:
-        app-name: 'tech0-gen-11-step3-2-node-71-green-kishimen-deploy'
+        app-name: 'tech0-gen-11-step3-2-node-71'
+        slot-name: 'green-kishimen-deploy'
         publish-profile: ${{ secrets.GREEN_TECH0_GEN_11_STEP3_2_NODE_71 }}
         package: frontend/.next/standalone
