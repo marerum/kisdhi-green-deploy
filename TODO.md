@@ -1,12 +1,21 @@
 # 開発残課題メモ
 
 ## 更新日
-2026/01/24
+2026/01/25
 
 ## リポジトリ情報
 - **作業ブランチ**: `feature/realtime-flow-generation_for_deploy`
 - **デプロイリポジトリ**: https://github.com/sekisho-0505/kishimen_deploy.git
 - **旧リポジトリ**: https://github.com/isshy-sys/kishimen.git（参照用に保持）
+
+## デプロイ環境情報
+- **フロントエンドリソース**: tech0-gen-11-step3-2-node-71
+  - **Mainスロット**: mainブランチの環境
+  - **Greenスロット**: tech0-gen-11-step3-2-node-71-green-kishimen-deploy（Azure Speech統合版デプロイ予定）
+- **Azure Speech Service**:
+  - リージョン: eastus
+  - エンドポイント: https://af-gen11.cognitiveservices.azure.com/
+  - 音声テキスト変換: https://eastus.stt.speech.microsoft.com
 
 ---
 
@@ -46,19 +55,23 @@
   - [ ] フォールバック機能（Claude失敗時のダミーデータ生成）
 - **見積もり**: 1-2日
 
-### 1.4 Azure Speech Service移行
+### 1.4 Azure Speech Service移行 ✅ 完了（2026/01/25）
 - **説明**: Web Speech APIからAzure Speech Serviceへ移行してリアルタイム音声認識の精度向上
 - **必要な作業**:
-  - [ ] Azure Speech Serviceのアカウント・リソース作成
-  - [ ] APIキーと環境変数の設定
-  - [ ] フロントエンドでAzure Speech SDKの統合
-  - [ ] リアルタイムストリーミング認識の実装
-  - [ ] 中間結果（Recognizing）と確定結果（Recognized）の処理分離
-  - [ ] 既存のWeb Speech API実装からの切り替え機能
-  - [ ] 日本語認識の最適化設定
-  - [ ] エラーハンドリングとフォールバック（Web Speech APIへ）
-- **見積もり**: 2-3日
-- **メリット**: 高精度な日本語認識、ストリーミング対応、専門用語辞書との連携
+  - [x] Azure Speech Serviceのアカウント・リソース作成（AI Foundry統合）
+  - [x] APIキーと環境変数の設定（eastusリージョン）
+  - [x] フロントエンドでAzure Speech SDKの統合（microsoft-cognitiveservices-speech-sdk）
+  - [x] リアルタイムストリーミング認識の実装（useAzureSpeechカスタムフック）
+  - [x] 中間結果（Recognizing）と確定結果（Recognized）の処理分離
+  - [x] 既存のWeb Speech API実装からの切り替え機能（プロバイダー切り替えボタン）
+  - [x] 日本語認識の最適化設定（ja-JP）
+  - [x] エラーハンドリングとフォールバック（Web Speech APIへ）
+  - [x] ローカル動作テスト完了
+- **完了内容**:
+  - Azure Speech優先、Web Speech APIフォールバックのハイブリッド実装
+  - UIでプロバイダー状態表示と切り替え機能
+  - リアルタイム音声認識が正常動作確認済み
+- **次のステップ**: Greenスロットへのデプロイ
 
 ### 1.5 Azureデプロイ準備
 - **説明**: アプリケーション全体をAzureにデプロイするための準備
@@ -171,6 +184,32 @@
   - 現在のブランチはフローエディタ機能（flow_edges, position_x/y）で先行
   - mainブランチは認証機能で先行
   - マイグレーションは慎重に実施（既存ユーザーデータの保護）
+
+### 3.6 高度なフロー生成機能（将来の拡張）
+- **説明**: 文脈理解による高度なフロー生成（分岐・挿入・並行処理）
+- **必要な作業（フェーズ1: 手動挿入）**:
+  - [ ] ノード選択UIの実装（「ここに挿入」ボタン）
+  - [ ] 挿入位置を指定するAPI拡張
+  - [ ] Claude APIに挿入位置を明示的に伝えるプロンプト設計
+  - [ ] エッジの再計算・再接続ロジック
+  - **見積もり**: 2-3日
+- **必要な作業（フェーズ2: 文脈理解による自動挿入）**:
+  - [ ] Claude APIに全フローコンテキストを渡す機能
+  - [ ] 挿入位置判定プロンプトの設計
+  - [ ] 挿入候補の複数提示UI
+  - [ ] ユーザー確認フロー
+  - **見積もり**: 3-4日
+- **必要な作業（フェーズ3: 分岐フロー生成）**:
+  - [ ] 条件分岐（if/else）の自動生成
+  - [ ] 並行処理フローの生成
+  - [ ] 分岐・合流ノードの特殊UI
+  - [ ] DAG（有向非巡回グラフ）構造への対応
+  - **見積もり**: 4-5日
+- **優先度**: MVP完了後（Azure移行後）に検討
+- **技術的課題**:
+  - 線形構造から木構造（DAG）への移行
+  - フロー分岐時のエッジ管理複雑化
+  - ユーザー体験の設計（挿入位置の指定方法）
 
 ---
 
@@ -348,6 +387,17 @@
 ---
 
 ## 9. 完了タスク（最近の履歴）
+
+### 2026/01/25
+- ✅ Azure Speech Service SDK インストール（microsoft-cognitiveservices-speech-sdk）
+- ✅ useAzureSpeech カスタムフック作成（リアルタイムストリーミング認識対応）
+- ✅ HearingInput コンポーネントに Azure Speech 統合
+- ✅ Azure Speech と Web Speech API のハイブリッド実装
+- ✅ プロバイダー切り替え機能実装（UI右上の切替ボタン）
+- ✅ ローカル動作テスト完了（音声入力→Azure Speech→テキスト変換）
+- ✅ Web Speech API フォールバック動作確認
+- ✅ 環境変数設定（NEXT_PUBLIC_AZURE_SPEECH_KEY, NEXT_PUBLIC_AZURE_SPEECH_REGION）
+- ✅ Azure AI Foundry リソース情報取得（eastus リージョン）
 
 ### 2026/01/24
 - ✅ .kiroディレクトリおよび不要なテスト/デバッグファイル削除
