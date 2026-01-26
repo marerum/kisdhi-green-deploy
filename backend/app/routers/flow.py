@@ -9,6 +9,7 @@ import logging
 
 from ..database import get_db
 from ..models import Project, HearingLog, FlowNode, FlowEdge
+from ..utils.sanitizer import sanitize_flow_nodes, sanitize_flow_edges
 from ..schemas import (
     FlowNodeResponse, FlowNodeCreate, FlowNodeUpdate, 
     FlowReorderRequest, FlowGenerationResponse, FlowEdgeResponse,
@@ -132,6 +133,10 @@ async def generate_flow(
         
         logger.info(f"Generated {len(created_nodes)} flow nodes and {len(created_edges)} edges for project {project_id}")
         
+        # Sanitize HTTP URLs to HTTPS for Mixed Content compliance
+        sanitize_flow_nodes(created_nodes)
+        sanitize_flow_edges(created_edges)
+        
         # Return the complete flow data
         return {
             "actors": flow_data["actors"],
@@ -192,6 +197,9 @@ async def get_flow_nodes(
         FlowNode.project_id == project_id
     ).order_by(FlowNode.order).all()
     
+    # Sanitize HTTP URLs to HTTPS for Mixed Content compliance
+    sanitize_flow_nodes(flow_nodes)
+    
     return flow_nodes
 
 
@@ -231,6 +239,10 @@ async def get_complete_flow(
         FlowEdge.project_id == project_id
     ).order_by(FlowEdge.from_node_order, FlowEdge.to_node_order).all()
     
+    # Sanitize HTTP URLs to HTTPS for Mixed Content compliance
+    sanitize_flow_nodes(flow_nodes)
+    sanitize_flow_edges(flow_edges)
+    
     return {
         "flow_nodes": flow_nodes,
         "edges": flow_edges
@@ -267,7 +279,10 @@ async def update_flow_node(
     
     # Update the node text
     old_text = flow_node.text
-    flow_node.text = node_update.text
+    
+    # Sanitize HTTP URLs to HTTPS for Mixed Content compliance
+    from ..utils.sanitizer import sanitize_http_to_https
+    flow_node.text = sanitize_http_to_https(node_update.text)
     
     try:
         db.commit()
@@ -317,9 +332,10 @@ async def create_flow_node(
         )
     
     # Create new flow node
+    from ..utils.sanitizer import sanitize_http_to_https
     flow_node = FlowNode(
         project_id=node_create.project_id,
-        text=node_create.text,
+        text=sanitize_http_to_https(node_create.text),
         order=node_create.order
     )
     
@@ -377,13 +393,14 @@ async def save_flow(
         db.query(FlowEdge).filter(FlowEdge.project_id == project_id).delete()
         
         # Create new edges
+        from ..utils.sanitizer import sanitize_http_to_https
         created_edges = []
         for edge_data in flow_save_request.edges:
             flow_edge = FlowEdge(
                 project_id=project_id,
                 from_node_order=edge_data.from_node_order,
                 to_node_order=edge_data.to_node_order,
-                condition=edge_data.condition
+                condition=sanitize_http_to_https(edge_data.condition)
             )
             db.add(flow_edge)
             created_edges.append(flow_edge)
