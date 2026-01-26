@@ -22,7 +22,8 @@ import { config } from './config';
 // Configuration
 const API_BASE_URL = config.apiUrl;
 console.log(`[DEBUG] API_BASE_URL configured as: ${API_BASE_URL}`);
-const DEFAULT_TIMEOUT = 5000; // 5 seconds (短縮してテスト)
+const DEFAULT_TIMEOUT = 30000; // 30 seconds (Azure cold start対応)
+const AUTH_TIMEOUT = 30000; // 30 seconds for authentication (cold start考慮)
 const FLOW_GENERATION_TIMEOUT = 90000; // 90 seconds for AI flow generation
 // 2026/01/20追加: 増分フロー生成用のタイムアウト（Claude API応答時間を考慮）
 const INCREMENTAL_FLOW_TIMEOUT = 60000; // 60 seconds for incremental flow generation
@@ -565,7 +566,7 @@ export const authApi = {
     return makeRequestWithFeedback<any>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ user_id: userId }),
-    }, 'Logging in');
+    }, 'Logging in', AUTH_TIMEOUT);
   },
 
   /**
@@ -578,14 +579,14 @@ export const authApi = {
         user_id: userId,
         display_name: displayName 
       }),
-    }, 'Registering user');
+    }, 'Registering user', AUTH_TIMEOUT);
   },
 
   /**
    * Validate user
    */
   async validateUser(userId: string): Promise<any> {
-    return makeRequestWithFeedback<any>(`/auth/validate/${userId}`, {}, 'Validating user');
+    return makeRequestWithFeedback<any>(`/auth/validate/${userId}`, {}, 'Validating user', AUTH_TIMEOUT);
   },
 };
 
