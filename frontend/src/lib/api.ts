@@ -169,25 +169,46 @@ async function makeRequest<T>(
     },
   };
 
-  // Add timeout using AbortController with custom timeout support
-  const controller = new AbortController();
+  // Handle timeout and abort signal
   const timeout = customTimeout || DEFAULT_TIMEOUT;
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  requestOptions.signal = controller.signal;
+  const controller = new AbortController();
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  // If caller provided their own signal, combine it with our timeout controller
+  const originalSignal = requestOptions.signal;
+  if (originalSignal) {
+    // If the original signal is already aborted, use it as-is
+    if (originalSignal.aborted) {
+      requestOptions.signal = originalSignal;
+    } else {
+      // Listen to the original signal and abort our controller
+      originalSignal.addEventListener('abort', () => {
+        controller.abort();
+      });
+      requestOptions.signal = controller.signal;
+    }
+  } else {
+    requestOptions.signal = controller.signal;
+  }
+  
+  // Set up timeout
+  timeoutId = setTimeout(() => {
+    console.warn(`[DEBUG] Request timeout after ${timeout}ms: ${url}`);
+    controller.abort();
+  }, timeout);
 
   try {
     console.log(`[DEBUG] Making request to: ${url}`);
-    console.log(`[DEBUG] Request options:`, requestOptions);
     console.log(`[DEBUG] Timeout set to: ${timeout}ms`);
     
     const response = await fetch(url, requestOptions);
-    clearTimeout(timeoutId);
     
     console.log(`[DEBUG] Response received - Status: ${response.status}`);
     
     // Handle non-JSON responses
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
+      if (timeoutId) clearTimeout(timeoutId);
       if (!response.ok) {
         throw ApiClientError.fromResponse(response);
       }
@@ -195,7 +216,11 @@ async function makeRequest<T>(
       return {} as T;
     }
 
+    // Read JSON with timeout still active (in case of large response)
     const data = await response.json();
+    
+    // Clear timeout after successful response parsing
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw ApiClientError.fromResponse(response, data);
@@ -203,7 +228,7 @@ async function makeRequest<T>(
 
     return data;
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     
     console.error(`[DEBUG] Request failed:`, error);
     console.error(`[DEBUG] Error type:`, error instanceof Error ? error.constructor.name : typeof error);
@@ -212,16 +237,17 @@ async function makeRequest<T>(
       console.error(`[DEBUG] Error message:`, error.message);
     }
 
-    // Handle AbortError (timeout)
+    // Handle AbortError (timeout or external cancellation)
     if (error instanceof Error && error.name === 'AbortError') {
-      const timeoutError = ApiClientError.fromTimeout();
-      
-      if (retryCount < MAX_RETRIES) {
-        await delay(RETRY_DELAY * (retryCount + 1));
-        return makeRequest<T>(endpoint, options, retryCount + 1, customTimeout);
+      // Check if this was a timeout or external abort
+      if (originalSignal && originalSignal.aborted) {
+        // External abort (e.g., component unmount) - don't retry
+        console.warn(`[DEBUG] Request was cancelled externally`);
+        throw new ApiClientError('Request was cancelled', 0, 'CANCELLED', undefined, false);
       }
-      
-      throw timeoutError;
+      // Timeout - don't retry timeouts as they indicate server overload
+      console.warn(`[DEBUG] Request timeout: ${url}`);
+      throw ApiClientError.fromTimeout();
     }
 
     // Handle network errors
@@ -229,6 +255,7 @@ async function makeRequest<T>(
       const networkError = ApiClientError.fromNetworkError(error);
       
       if (retryCount < MAX_RETRIES) {
+        console.log(`[DEBUG] Retrying request (${retryCount + 1}/${MAX_RETRIES})...`);
         await delay(RETRY_DELAY * (retryCount + 1));
         return makeRequest<T>(endpoint, options, retryCount + 1, customTimeout);
       }
@@ -238,6 +265,7 @@ async function makeRequest<T>(
 
     // Handle API errors with retry logic
     if (error instanceof ApiClientError && error.isRetryable && retryCount < MAX_RETRIES) {
+      console.log(`[DEBUG] Retrying request (${retryCount + 1}/${MAX_RETRIES})...`);
       await delay(RETRY_DELAY * (retryCount + 1)); // Exponential backoff
       return makeRequest<T>(endpoint, options, retryCount + 1, customTimeout);
     }

@@ -28,30 +28,51 @@ export default function ProjectDashboard({ params }: ProjectDashboardProps) {
   const [isGeneratingFlow, setIsGeneratingFlow] = useState(false);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    let isMounted = true;
+    
     const loadProjectData = async () => {
       try {
         setIsLoading(true);
         setError(null);
         
-        // Load project details and hearing logs in parallel
+        // Load project details and hearing logs in parallel with abort signal
         const [projectData, hearingData] = await Promise.all([
           api.projects.getProject(projectId),
-          hearingApi.getHearingLogs(projectId).catch(() => []) // Don't fail if no hearing logs
+          hearingApi.getHearingLogs(projectId).catch((err) => {
+            // Log but don't fail on hearing logs error
+            console.warn('Failed to load hearing logs:', err);
+            return [];
+          })
         ]);
         
-        setProject(projectData);
-        setHearingLogs(hearingData);
-      } catch (err) {
+        // Only update state if component is still mounted
+        if (isMounted && !abortController.signal.aborted) {
+          setProject(projectData);
+          setHearingLogs(hearingData);
+        }
+      } catch (err: any) {
         console.error('Failed to load project data:', err);
-        setError('プロジェクトデータの読み込みに失敗しました');
+        // Don't show error if request was cancelled
+        if (isMounted && !abortController.signal.aborted && err?.code !== 'CANCELLED') {
+          setError('プロジェクトデータの読み込みに失敗しました');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted && !abortController.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
 
     if (projectId) {
       loadProjectData();
     }
+    
+    // Cleanup function: abort requests and prevent state updates
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, [projectId]);
 
   const handleGenerateFlow = async () => {

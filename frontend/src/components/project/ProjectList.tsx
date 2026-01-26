@@ -17,9 +17,38 @@ export default function ProjectList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    let isMounted = true;
+    
+    const loadProjects = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const projectsData = await api.projects.getProjects();
+        
+        if (isMounted && !abortController.signal.aborted) {
+          setProjects(projectsData);
+        }
+      } catch (error: any) {
+        console.error('Failed to load projects:', error);
+        if (isMounted && !abortController.signal.aborted && error?.code !== 'CANCELLED') {
+          setError('プロジェクトの読み込みに失敗しました。再度お試しください。');
+        }
+      } finally {
+        if (isMounted && !abortController.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+    
     loadProjects();
+    
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, []);
-
+  
   const loadProjects = async () => {
     try {
       setIsLoading(true);

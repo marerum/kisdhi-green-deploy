@@ -41,17 +41,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (userId: string) => {
+    const abortController = new AbortController();
     try {
       setIsLoading(true);
       
       const userData = await authApi.login(userId);
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
+      
+      // Check if request was aborted before updating state
+      if (!abortController.signal.aborted) {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
+    } catch (error: any) {
+      // Don't throw error if request was cancelled
+      if (error?.code !== 'CANCELLED') {
+        console.error('Login failed:', error);
+        throw error;
+      }
     } finally {
-      setIsLoading(false);
+      if (!abortController.signal.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
