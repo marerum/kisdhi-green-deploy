@@ -27,13 +27,13 @@ async def login(user_login: UserLogin, db: Session = Depends(get_db)):
     
     if not user:
         # Create new user if doesn't exist
-        # Explicitly set all optional fields to maintain compatibility
-        # with main branch database schema (which has NOT NULL constraints)
+        # Use empty strings instead of NULL for NOT NULL columns
+        # to satisfy main branch database schema constraints
         user = User(
             user_id=user_login.user_id,
             display_name=user_login.user_id,  # Use user_id as display name by default
-            email=None,  # Optional for simple auth
-            password_hash=None,  # Optional for simple auth (main branch uses this)
+            email='',  # Empty string for NOT NULL constraint
+            password_hash='',  # Empty string for NOT NULL constraint (main branch requirement)
             is_active=True,  # Default to active
             reset_token=None,  # Not used in feature branch
             reset_token_expires=None  # Not used in feature branch
@@ -60,11 +60,12 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
         )
     
     # Create new user with explicit defaults for compatibility
+    # Use empty strings for NOT NULL columns
     user = User(
         user_id=user_create.user_id,
         display_name=user_create.display_name or user_create.user_id,
-        email=None,
-        password_hash=None,
+        email='',  # Empty string for NOT NULL constraint
+        password_hash='',  # Empty string for NOT NULL constraint
         is_active=True,
         reset_token=None,
         reset_token_expires=None
