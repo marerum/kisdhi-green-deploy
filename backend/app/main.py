@@ -183,17 +183,20 @@ async def health_check():
         # Test database connection
         db_healthy = test_db_connection()
         
-        # Test AI service
-        ai_healthy = ai_service.initialized
+        # Test AI services (both OpenAI and Claude)
+        openai_healthy = ai_service.initialized
+        claude_healthy = claude_service.initialized
         
-        overall_status = "healthy" if db_healthy and ai_healthy else "unhealthy"
+        # Overall status is healthy if database and at least one AI service is working
+        overall_status = "healthy" if db_healthy and (openai_healthy or claude_healthy) else "unhealthy"
         
         return {
             "status": overall_status,
             "environment": settings.environment,
             "services": {
                 "database": "healthy" if db_healthy else "unhealthy",
-                "ai_service": "healthy" if ai_healthy else "unhealthy"
+                "openai_service": "healthy" if openai_healthy else "unhealthy",
+                "claude_service": "healthy" if claude_healthy else "unhealthy"
             }
         }
     except Exception as e:
