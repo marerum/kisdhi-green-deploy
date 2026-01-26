@@ -13,14 +13,28 @@ from .database import Base
 
 class User(Base):
     """
-    User model for simple authentication.
-    No password required - just user ID based authentication.
+    User model compatible with both simple and password-based authentication.
+    
+    Feature branch: Uses simple user_id authentication (no password)
+    Main branch: Uses password-based authentication (email + password_hash)
+    
+    This model is designed to work with the shared database schema
+    that was created by the main branch.
     """
     __tablename__ = "users"
 
     id: Mapped[int] = Column(Integer, primary_key=True, index=True)
     user_id: Mapped[str] = Column(String(100), unique=True, nullable=False, index=True)
+    
+    # Optional fields - Main branch uses these for password authentication
+    # Feature branch sets these to NULL for simple authentication
+    email: Mapped[Optional[str]] = Column(String(255), nullable=True)
+    password_hash: Mapped[Optional[str]] = Column(String(255), nullable=True)
     display_name: Mapped[Optional[str]] = Column(String(255), nullable=True)
+    is_active: Mapped[Optional[bool]] = Column(Integer, nullable=True, default=1)  # tinyint(1)
+    reset_token: Mapped[Optional[str]] = Column(String(255), nullable=True)
+    reset_token_expires: Mapped[Optional[datetime]] = Column(DateTime, nullable=True)
+    
     created_at: Mapped[datetime] = Column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 

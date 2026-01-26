@@ -17,16 +17,26 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 async def login(user_login: UserLogin, db: Session = Depends(get_db)):
     """
     Simple login endpoint - creates user if doesn't exist, returns user info if exists.
-    No password required for simplicity.
+    No password required for feature branch.
+    
+    Compatible with main branch database schema by explicitly setting
+    password_hash and other optional fields to their appropriate defaults.
     """
     # Check if user exists
     user = db.query(User).filter(User.user_id == user_login.user_id).first()
     
     if not user:
         # Create new user if doesn't exist
+        # Explicitly set all optional fields to maintain compatibility
+        # with main branch database schema (which has NOT NULL constraints)
         user = User(
             user_id=user_login.user_id,
-            display_name=user_login.user_id  # Use user_id as display name by default
+            display_name=user_login.user_id,  # Use user_id as display name by default
+            email=None,  # Optional for simple auth
+            password_hash=None,  # Optional for simple auth (main branch uses this)
+            is_active=True,  # Default to active
+            reset_token=None,  # Not used in feature branch
+            reset_token_expires=None  # Not used in feature branch
         )
         db.add(user)
         db.commit()
@@ -39,6 +49,7 @@ async def login(user_login: UserLogin, db: Session = Depends(get_db)):
 async def register(user_create: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user with optional display name.
+    Compatible with main branch database schema.
     """
     # Check if user already exists
     existing_user = db.query(User).filter(User.user_id == user_create.user_id).first()
@@ -48,10 +59,15 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
             detail="User ID already exists"
         )
     
-    # Create new user
+    # Create new user with explicit defaults for compatibility
     user = User(
         user_id=user_create.user_id,
-        display_name=user_create.display_name or user_create.user_id
+        display_name=user_create.display_name or user_create.user_id,
+        email=None,
+        password_hash=None,
+        is_active=True,
+        reset_token=None,
+        reset_token_expires=None
     )
     db.add(user)
     db.commit()
