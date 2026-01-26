@@ -79,13 +79,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS - Azure deployment requires explicit configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Global exception handler for business exceptions
@@ -151,13 +153,18 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Request ID middleware for better error tracking
+# Request ID and logging middleware for better error tracking
 @app.middleware("http")
-async def add_request_id(request: Request, call_next):
-    """Add request ID for better error tracking."""
+async def add_request_id_and_log(request: Request, call_next):
+    """Add request ID and log all requests for debugging."""
     import uuid
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
+    
+    # Log all requests including OPTIONS for CORS debugging
+    logger.info(f"Incoming request: {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}")
+    if request.method == "OPTIONS":
+        logger.info(f"CORS preflight request: Origin={request.headers.get('origin')}, Access-Control-Request-Method={request.headers.get('access-control-request-method')}")
     
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
