@@ -85,32 +85,56 @@ class User(Base):
 
 ## 0. 緊急対応（最優先）
 
-### 0.1 featureブランチのmodels.py修正 🚨 対応必須
+### 0.1 featureブランチのmodels.py修正 ✅ 完了（2026/01/26）
 - **説明**: データベーススキーマとコードの不整合を解消
 - **必要な作業**:
   - [x] 現状確認: usersテーブルの実際の構造を確認（完了）
   - [x] 問題分析: mainブランチとfeatureブランチの違いを特定（完了）
-  - [ ] models.pyの修正: User クラスに欠けているカラムを追加
+  - [x] models.pyの修正: User クラスに欠けているカラムを追加
     - `email: Mapped[Optional[str]]`
     - `password_hash: Mapped[Optional[str]]`
     - `is_active: Mapped[Optional[bool]]`（デフォルト値対応）
     - `reset_token: Mapped[Optional[str]]`
     - `reset_token_expires: Mapped[Optional[datetime]]`
-    - `display_name` をOptional[str]に修正（既にそうなっているが念のため確認）
-  - [ ] auth.pyの修正: INSERT時にデフォルト値を設定
-    - `password_hash=None` （NULLを明示的に設定）
+    - `display_name` をOptional[str]に修正
+  - [x] auth.pyの修正: INSERT時に空文字列を設定（NOT NULL制約対応）
+    - `password_hash=''` （空文字列でNOT NULL制約を満たす）
+    - `email=''` （空文字列でNOT NULL制約を満たす）
+    - `display_name=user_id` （user_idをデフォルト値として使用）
     - `is_active=True` （デフォルトで有効）
-  - [ ] ローカルテスト: ログイン機能の動作確認
-  - [ ] デプロイ: greenスロットへpush
-  - [ ] 動作確認: Azure環境でログインテスト
-- **見積もり**: 1時間
+  - [x] ローカルテスト: ログイン機能の動作確認
+  - [x] デプロイ: greenスロットへpush（コミット: 7109a5b, afcf688）
+  - [x] 動作確認: Azure環境でログインテスト成功（ユーザー: mare1234）
+- **完了日**: 2026/01/26 13:10 JST
+- **デプロイ情報**:
+  - Build ID: f9d82b1e84c1fc7a
+  - Backend: tech0-gen-11-step3-2-py-71-green-kishimen-deploy
+  - Frontend: tech0-gen-11-step3-2-node-71-green-kishimen-deploy
+- **解決策の詳細**:
+  - **問題**: データベースの`password_hash`と`email`カラムが`NOT NULL`制約を持っていた
+  - **初期アプローチ**: `nullable=True`に変更しようとしたが、SQLAlchemyの制限によりDDLが実行されない
+  - **最終解決策**: コードレベルで空文字列(`''`)を明示的に設定してNOT NULL制約を満たす
+  - **利点**: データベース構造を変更せず、mainブランチに影響なし
 - **制約**: 
-  - **mainブランチのデータベースに影響を与えないこと**
-  - マイグレーションスクリプトを実行しないこと
-  - データベース構造の変更をしないこと
+  - **mainブランチのデータベースに影響を与えないこと** ✅ 達成
+  - マイグレーションスクリプトを実行しないこと ✅ 達成
+  - データベース構造の変更をしないこと ✅ 達成
 - **完了条件**:
   - ✅ featureブランチのgreenスロットでmare1234がログインできる
   - ✅ mainブランチのmainスロットに影響なし
+  - ✅ Projects APIが正常動作（200 OK）
+
+### 0.2 パフォーマンス最適化（任意）
+- **説明**: Azure App Serviceのコールドスタート対策
+- **現状**: 初回リクエスト時に30-40秒の起動時間が発生
+- **原因**: アイドル状態後のアプリケーション起動（Python依存関係の読み込み + データベース接続確立）
+- **影響**: ログイン時のレスポンス遅延（機能的には問題なし）
+- **対策オプション**:
+  - [ ] Azure App Serviceの「Always On」設定を有効化（Basic tier以上が必要）
+  - [ ] Application Insightsでパフォーマンス監視
+  - [ ] ヘルスチェックエンドポイントへの定期的なウォーミングリクエスト
+- **優先度**: 低（機能は正常動作しており、ユーザー体験への影響は限定的）
+- **備考**: mainブランチの認証方式に変更しても、コールドスタートの問題は解決しない（Azure プラットフォームの動作特性）
 
 ---
 

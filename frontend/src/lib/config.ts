@@ -61,8 +61,15 @@ function validateConfig(): FrontendConfig {
     throw new ConfigurationError(errorMessage);
   }
   
+  // Force HTTPS for Azure deployments to prevent mixed content errors
+  let normalizedApiUrl = apiUrl!;
+  if (normalizedApiUrl.startsWith('http://') && normalizedApiUrl.includes('.azurewebsites.net')) {
+    normalizedApiUrl = normalizedApiUrl.replace('http://', 'https://');
+    console.warn('[CONFIG] Automatically upgraded HTTP to HTTPS for Azure deployment:', normalizedApiUrl);
+  }
+  
   return {
-    apiUrl: apiUrl!,
+    apiUrl: normalizedApiUrl,
     environment,
   };
 }

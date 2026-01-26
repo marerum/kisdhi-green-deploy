@@ -19,8 +19,14 @@ import {
 } from '@/types/api';
 import { config } from './config';
 
-// Configuration
-const API_BASE_URL = config.apiUrl;
+// Configuration - normalize URL to ensure HTTPS
+let normalizedApiUrl = config.apiUrl;
+// Force HTTPS for all Azure URLs to prevent mixed content errors
+if (normalizedApiUrl.startsWith('http://') && normalizedApiUrl.includes('.azurewebsites.net')) {
+  normalizedApiUrl = normalizedApiUrl.replace('http://', 'https://');
+  console.warn('[API] Automatically upgraded HTTP to HTTPS:', normalizedApiUrl);
+}
+const API_BASE_URL = normalizedApiUrl;
 console.log(`[DEBUG] API_BASE_URL configured as: ${API_BASE_URL}`);
 const DEFAULT_TIMEOUT = 30000; // 30 seconds (Azure cold start対応)
 const AUTH_TIMEOUT = 30000; // 30 seconds for authentication (cold start考慮)
@@ -122,7 +128,13 @@ async function makeRequest<T>(
   retryCount = 0,
   customTimeout?: number
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+  let url = `${API_BASE_URL}${endpoint}`;
+  
+  // Additional safety check: ensure HTTPS for Azure domains
+  if (url.startsWith('http://') && url.includes('.azurewebsites.net')) {
+    url = url.replace('http://', 'https://');
+    console.warn('[API] Request URL upgraded to HTTPS:', url);
+  }
   
   // Get user from localStorage for authentication
   const getUserId = (): string | null => {
